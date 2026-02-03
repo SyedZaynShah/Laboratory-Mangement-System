@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart' as sq3;
 
 class DatabaseMigrationService {
-  static const int latestVersion = 2;
+  static const int latestVersion = 3;
 
   final sq3.Database db;
   DatabaseMigrationService(this.db);
@@ -30,6 +30,14 @@ class DatabaseMigrationService {
       _recordSchemaMigration(2);
       if (kDebugMode) {
         debugPrint('[DB] Migrated to schema version 2');
+      }
+    }
+    if (currentVersion < 3) {
+      _migrateToV3();
+      _setUserVersion(3);
+      _recordSchemaMigration(3);
+      if (kDebugMode) {
+        debugPrint('[DB] Migrated to schema version 3');
       }
     }
   }
@@ -389,6 +397,41 @@ class DatabaseMigrationService {
       ''');
       db.execute(
         'CREATE INDEX IF NOT EXISTS idx_order_items_order ON test_order_items(order_id);',
+      );
+
+      db.execute('COMMIT;');
+    } catch (e) {
+      db.execute('ROLLBACK;');
+      rethrow;
+    }
+  }
+
+  void _migrateToV3() {
+    db.execute('BEGIN;');
+    try {
+      // Replace legacy samples table (patient_tests-based) with order_items-based samples
+      db.execute('DROP TABLE IF EXISTS samples;');
+      db.execute('''
+        CREATE TABLE samples (
+          id TEXT PRIMARY KEY,
+          test_order_item_id TEXT NOT NULL UNIQUE REFERENCES test_order_items(id) ON UPDATE CASCADE ON DELETE CASCADE,
+          sample_code TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL CHECK(status IN ('awaiting','collected','received','rejected','processed')),
+          collected_at INTEGER,
+          collected_by TEXT REFERENCES users(id),
+          container TEXT,
+          notes TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        );
+      ''');
+      db.execute(
+        'CREATE INDEX idx_samples_order_item ON samples(test_order_item_id);',
+      );
+      db.execute('CREATE INDEX idx_samples_status ON samples(status);');
+      db.execute(
+        'CREATE INDEX idx_samples_collected_at ON samples(collected_at);',
       );
 
       db.execute('COMMIT;');

@@ -27,6 +27,7 @@ class TestOrder {
   final String? patientName;
   final int? testsCount;
   final int? totalCents;
+  final int? collectedCount;
 
   TestOrder({
     required this.id,
@@ -39,5 +40,6 @@ class TestOrder {
     this.patientName,
     this.testsCount,
     this.totalCents,
+    this.collectedCount,
   });
 }

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../orders/data/test_orders_providers.dart';
 import '../../orders/data/test_order_models.dart';
 import 'create_order_screen.dart';
+import '../../samples/ui/collect_samples_screen.dart';
 
 class OrdersListScreen extends ConsumerStatefulWidget {
   const OrdersListScreen({super.key});
@@ -21,9 +22,9 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
   }
 
   Future<void> _openCreate() async {
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const CreateOrderScreen()),
-    );
+    final ok = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const CreateOrderScreen()));
     if (ok == true) {
       _refresh();
     }
@@ -81,47 +82,96 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
                                 DataColumn(label: Text('Order No')),
                                 DataColumn(label: Text('Patient Name')),
                                 DataColumn(label: Text('Tests Count')),
+                                DataColumn(label: Text('Samples')),
                                 DataColumn(label: Text('Total Amount')),
                                 DataColumn(label: Text('Status')),
                                 DataColumn(label: Text('Ordered At')),
                                 DataColumn(label: Text('Actions')),
                               ],
                               rows: orders.map((o) {
-                                return DataRow(cells: [
-                                  DataCell(Text(o.orderNumber)),
-                                  DataCell(Text(o.patientName ?? '')),
-                                  DataCell(Text((o.testsCount ?? 0).toString())),
-                                  DataCell(Text(_formatPrice(o.totalCents))),
-                                  DataCell(Text(o.status)),
-                                  DataCell(Text(_formatDate(o.orderedAt))),
-                                  DataCell(
-                                    IconButton(
-                                      tooltip: 'View',
-                                      icon: const Icon(Icons.visibility_outlined),
-                                      onPressed: () async {
-                                        await showDialog(
-                                          context: context,
-                                          builder: (ctx) => AlertDialog(
-                                            title: Text('Order ${o.orderNumber}'),
-                                            content: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text('Patient: ${o.patientName ?? ''}')
-                                              ],
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(ctx),
-                                                child: const Text('Close'),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      },
+                                return DataRow(
+                                  cells: [
+                                    DataCell(Text(o.orderNumber)),
+                                    DataCell(Text(o.patientName ?? '')),
+                                    DataCell(
+                                      Text((o.testsCount ?? 0).toString()),
                                     ),
-                                  ),
-                                ]);
+                                    DataCell(
+                                      Text(
+                                        '${o.collectedCount ?? 0}/${o.testsCount ?? 0}',
+                                      ),
+                                    ),
+                                    DataCell(Text(_formatPrice(o.totalCents))),
+                                    DataCell(Text(o.status)),
+                                    DataCell(Text(_formatDate(o.orderedAt))),
+                                    DataCell(
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            tooltip: 'View',
+                                            icon: const Icon(
+                                              Icons.visibility_outlined,
+                                            ),
+                                            onPressed: () async {
+                                              await showDialog(
+                                                context: context,
+                                                builder: (ctx) => AlertDialog(
+                                                  title: Text(
+                                                    'Order ${o.orderNumber}',
+                                                  ),
+                                                  content: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        'Patient: ${o.patientName ?? ''}',
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(ctx),
+                                                      child: const Text(
+                                                        'Close',
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                          const SizedBox(width: 4),
+                                          IconButton(
+                                            tooltip: 'Collect Samples',
+                                            icon: const Icon(
+                                              Icons.biotech_outlined,
+                                            ),
+                                            onPressed: () async {
+                                              final ok =
+                                                  await Navigator.of(
+                                                    context,
+                                                  ).push<bool>(
+                                                    MaterialPageRoute(
+                                                      builder: (_) =>
+                                                          CollectSamplesScreen(
+                                                            orderId: o.id,
+                                                          ),
+                                                    ),
+                                                  );
+                                              if (ok == true) {
+                                                _refresh();
+                                              }
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
                               }).toList(),
                             ),
                           ),
