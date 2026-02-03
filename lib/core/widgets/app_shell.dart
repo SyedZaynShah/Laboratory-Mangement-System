@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../navigation/nav_provider.dart';
 import '../../features/dashboard/screen/dashboard_screen.dart';
-import '../../features/patients/screen/patients_screen.dart';
+import '../../features/patients/ui/patients_list_screen.dart';
 import '../../features/tests_master/screen/tests_master_screen.dart';
 import '../../features/billing/screen/billing_screen.dart';
 import '../../features/samples/screen/samples_screen.dart';
@@ -10,6 +10,7 @@ import '../../features/results/screen/results_screen.dart';
 import '../../features/reports/screen/reports_screen.dart';
 import '../../features/settings/screen/settings_screen.dart';
 import '../../models/roles.dart';
+import '../auth/auth_controller.dart';
 
 class AppShell extends ConsumerWidget {
   final UserRole? role;
@@ -26,7 +27,7 @@ class AppShell extends ConsumerWidget {
           content = const DashboardScreen();
           break;
         case AppSection.patients:
-          content = const PatientsScreen();
+          content = const PatientsListScreen();
           break;
         case AppSection.testsMaster:
           content = const TestsMasterScreen();
@@ -96,6 +97,9 @@ class AppShell extends ConsumerWidget {
               children: [
                 _TopBar(
                   title: items.firstWhere((e) => e.section == section).label,
+                  onLogout: () {
+                    ref.read(authControllerProvider).signOut();
+                  },
                 ),
                 const Divider(height: 1),
                 Expanded(child: buildContent()),
@@ -110,7 +114,8 @@ class AppShell extends ConsumerWidget {
 
 class _TopBar extends StatelessWidget {
   final String title;
-  const _TopBar({required this.title});
+  final VoidCallback onLogout;
+  const _TopBar({required this.title, required this.onLogout});
 
   @override
   Widget build(BuildContext context) {
@@ -118,11 +123,21 @@ class _TopBar extends StatelessWidget {
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       alignment: Alignment.centerLeft,
-      child: Text(
-        title,
-        style: Theme.of(
-          context,
-        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: onLogout,
+            icon: const Icon(Icons.logout),
+            label: const Text('Logout'),
+          ),
+        ],
       ),
     );
   }

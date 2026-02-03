@@ -26,7 +26,7 @@ class AuthController {
   Future<bool> signIn(String email, String password) async {
     final db = await ref.read(appDatabaseProvider.future);
     final stmt = db.db.prepare(
-      'SELECT role FROM users WHERE email = ? AND password = ? AND is_active = 1 LIMIT 1',
+      'SELECT role FROM users WHERE email = ? AND password_hash = ? AND is_active = 1 LIMIT 1',
     );
     try {
       final result = stmt.select([email.trim(), password]);
@@ -66,10 +66,10 @@ class AuthController {
     final exists = await hasAnyUsers();
     if (exists) return false;
     final db = await ref.read(appDatabaseProvider.future);
-    final ts = DateTime.now().millisecondsSinceEpoch;
+    final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final stmt = db.db.prepare('''
-      INSERT INTO users (id, email, password, name, role, is_active, created_at, updated_at, sync_status)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0)
+      INSERT INTO users (id, email, password_hash, name, role, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
     ''');
     try {
       stmt.execute([

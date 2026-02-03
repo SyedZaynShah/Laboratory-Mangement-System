@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'database/app_database.dart';
 import 'sync/sync_service.dart';
-import 'database/seed_data.dart';
 
 final appInitProvider = FutureProvider<void>((ref) async {
-  final db = await ref.read(appDatabaseProvider.future);
-  await seedInitialData(db);
+  await ref.read(appDatabaseProvider.future);
   ref.read(syncServiceProvider).ensureStarted();
 });
 
