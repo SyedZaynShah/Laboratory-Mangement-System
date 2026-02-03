@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart' as sq3;
 
 class DatabaseMigrationService {
-  static const int latestVersion = 1;
+  static const int latestVersion = 2;
 
   final sq3.Database db;
   DatabaseMigrationService(this.db);
@@ -24,6 +24,14 @@ class DatabaseMigrationService {
         debugPrint('[DB] Migrated to schema version 1');
       }
     }
+    if (currentVersion < 2) {
+      _migrateToV2();
+      _setUserVersion(2);
+      _recordSchemaMigration(2);
+      if (kDebugMode) {
+        debugPrint('[DB] Migrated to schema version 2');
+      }
+    }
   }
 
   int _getUserVersion() {
@@ -41,7 +49,10 @@ class DatabaseMigrationService {
 
   void _recordSchemaMigration(int version) {
     final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    db.execute('INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (?, ?);', [version, ts]);
+    db.execute(
+      'INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (?, ?);',
+      [version, ts],
+    );
   }
 
   void _migrateToV1() {
@@ -130,7 +141,9 @@ class DatabaseMigrationService {
           deleted_at INTEGER
         );
       ''');
-      db.execute('CREATE UNIQUE INDEX idx_unique_test_categories ON test_categories(name, parent_id);');
+      db.execute(
+        'CREATE UNIQUE INDEX idx_unique_test_categories ON test_categories(name, parent_id);',
+      );
 
       // tests_master
       db.execute('''
@@ -149,7 +162,9 @@ class DatabaseMigrationService {
           deleted_at INTEGER
         );
       ''');
-      db.execute('CREATE INDEX idx_tests_category ON tests_master(category_id);');
+      db.execute(
+        'CREATE INDEX idx_tests_category ON tests_master(category_id);',
+      );
       db.execute('CREATE INDEX idx_tests_name ON tests_master(name);');
 
       // test_reference_ranges
@@ -168,7 +183,9 @@ class DatabaseMigrationService {
           updated_at INTEGER NOT NULL
         );
       ''');
-      db.execute('CREATE INDEX idx_ref_ranges_test ON test_reference_ranges(test_id);');
+      db.execute(
+        'CREATE INDEX idx_ref_ranges_test ON test_reference_ranges(test_id);',
+      );
 
       // panel_items
       db.execute('''
@@ -199,7 +216,9 @@ class DatabaseMigrationService {
       db.execute('CREATE INDEX idx_pt_patient ON patient_tests(patient_id);');
       db.execute('CREATE INDEX idx_pt_test ON patient_tests(test_id);');
       db.execute('CREATE INDEX idx_pt_status ON patient_tests(status);');
-      db.execute('CREATE INDEX idx_pt_ordered_at ON patient_tests(ordered_at);');
+      db.execute(
+        'CREATE INDEX idx_pt_ordered_at ON patient_tests(ordered_at);',
+      );
 
       // samples
       db.execute('''
@@ -217,7 +236,9 @@ class DatabaseMigrationService {
           deleted_at INTEGER
         );
       ''');
-      db.execute('CREATE INDEX idx_samples_collected_at ON samples(collected_at);');
+      db.execute(
+        'CREATE INDEX idx_samples_collected_at ON samples(collected_at);',
+      );
 
       // test_results
       db.execute('''
@@ -280,8 +301,12 @@ class DatabaseMigrationService {
           deleted_at INTEGER
         );
       ''');
-      db.execute('CREATE UNIQUE INDEX idx_unique_invoice_item ON invoice_items(invoice_id, patient_test_id);');
-      db.execute('CREATE INDEX idx_invoice_items_invoice ON invoice_items(invoice_id);');
+      db.execute(
+        'CREATE UNIQUE INDEX idx_unique_invoice_item ON invoice_items(invoice_id, patient_test_id);',
+      );
+      db.execute(
+        'CREATE INDEX idx_invoice_items_invoice ON invoice_items(invoice_id);',
+      );
 
       // payments
       db.execute('''
@@ -300,7 +325,9 @@ class DatabaseMigrationService {
         );
       ''');
       db.execute('CREATE INDEX idx_payments_invoice ON payments(invoice_id);');
-      db.execute('CREATE INDEX idx_payments_received_at ON payments(received_at);');
+      db.execute(
+        'CREATE INDEX idx_payments_received_at ON payments(received_at);',
+      );
 
       // audit_logs
       db.execute('''
@@ -315,8 +342,54 @@ class DatabaseMigrationService {
           new_values TEXT
         );
       ''');
-      db.execute('CREATE INDEX idx_audit_entity ON audit_logs(entity_type, entity_id);');
-      db.execute('CREATE INDEX idx_audit_changed_at ON audit_logs(changed_at);');
+      db.execute(
+        'CREATE INDEX idx_audit_entity ON audit_logs(entity_type, entity_id);',
+      );
+      db.execute(
+        'CREATE INDEX idx_audit_changed_at ON audit_logs(changed_at);',
+      );
+
+      db.execute('COMMIT;');
+    } catch (e) {
+      db.execute('ROLLBACK;');
+      rethrow;
+    }
+  }
+
+  void _migrateToV2() {
+    db.execute('BEGIN;');
+    try {
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS test_orders (
+          id TEXT PRIMARY KEY,
+          order_number TEXT NOT NULL UNIQUE,
+          patient_id TEXT NOT NULL REFERENCES patients(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+          ordered_at INTEGER NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('ordered','sample_collected','in_process','completed')),
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        );
+      ''');
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_test_orders_patient ON test_orders(patient_id);',
+      );
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_test_orders_ordered_at ON test_orders(ordered_at);',
+      );
+
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS test_order_items (
+          id TEXT PRIMARY KEY,
+          order_id TEXT NOT NULL REFERENCES test_orders(id) ON UPDATE CASCADE ON DELETE CASCADE,
+          test_id TEXT NOT NULL REFERENCES tests_master(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+          price_cents INTEGER NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+      ''');
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_order_items_order ON test_order_items(order_id);',
+      );
 
       db.execute('COMMIT;');
     } catch (e) {

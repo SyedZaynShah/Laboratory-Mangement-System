@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../navigation/nav_provider.dart';
 import '../../features/dashboard/screen/dashboard_screen.dart';
 import '../../features/patients/ui/patients_list_screen.dart';
-import '../../features/tests_master/screen/tests_master_screen.dart';
+import '../../features/orders/ui/orders_list_screen.dart';
+import '../../features/tests/ui/tests_list_screen.dart';
 import '../../features/billing/screen/billing_screen.dart';
 import '../../features/samples/screen/samples_screen.dart';
 import '../../features/results/screen/results_screen.dart';
@@ -29,8 +30,11 @@ class AppShell extends ConsumerWidget {
         case AppSection.patients:
           content = const PatientsListScreen();
           break;
+        case AppSection.orders:
+          content = const OrdersListScreen();
+          break;
         case AppSection.testsMaster:
-          content = const TestsMasterScreen();
+          content = const TestsListScreen();
           break;
         case AppSection.billing:
           content = const BillingScreen();
@@ -54,6 +58,7 @@ class AppShell extends ConsumerWidget {
     final items = <_NavItem>[
       _NavItem('Dashboard', Icons.dashboard, AppSection.dashboard),
       _NavItem('Patients', Icons.people, AppSection.patients),
+      _NavItem('Orders', Icons.assignment, AppSection.orders),
       if (role == UserRole.admin)
         _NavItem('Test Master', Icons.science, AppSection.testsMaster),
       _NavItem('Billing', Icons.receipt, AppSection.billing),

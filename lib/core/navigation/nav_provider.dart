@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 enum AppSection {
   dashboard,
   patients,
+  orders,
   testsMaster,
   billing,
   samples,

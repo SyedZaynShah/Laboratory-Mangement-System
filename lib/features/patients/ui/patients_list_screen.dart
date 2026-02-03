@@ -102,79 +102,120 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                 return Column(
                   children: [
                     Expanded(
-                      child: Scrollbar(
-                        thumbVisibility: true,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(minWidth: 900),
-                            child: SingleChildScrollView(
-                              child: DataTable(
-                                columns: const [
-                                  DataColumn(label: Text('Name')),
-                                  DataColumn(label: Text('Phone')),
-                                  DataColumn(label: Text('Gender')),
-                                  DataColumn(label: Text('CNIC')),
-                                  DataColumn(label: Text('Created')),
-                                  DataColumn(label: Text('Actions')),
-                                ],
-                                rows: rows.map((row) {
-                                  final dt = DateTime.fromMillisecondsSinceEpoch(((row['created_at'] as int?) ?? 0) * 1000);
-                                  final created = DateFormat('yyyy-MM-dd HH:mm').format(dt);
-                                  return DataRow(
-                                    cells: [
-                                      DataCell(Text((row['full_name'] as String?) ?? '')),
-                                      DataCell(Text((row['phone'] as String?) ?? '')),
-                                      DataCell(Text((row['gender'] as String?) ?? '')),
-                                      DataCell(Text((row['cnic'] as String?) ?? '')),
-                                      DataCell(Text(created)),
-                                      DataCell(Row(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 900),
+                          child: SingleChildScrollView(
+                            child: DataTable(
+                              columns: const [
+                                DataColumn(label: Text('Name')),
+                                DataColumn(label: Text('Phone')),
+                                DataColumn(label: Text('Gender')),
+                                DataColumn(label: Text('CNIC')),
+                                DataColumn(label: Text('Created')),
+                                DataColumn(label: Text('Actions')),
+                              ],
+                              rows: rows.map((row) {
+                                final dt = DateTime.fromMillisecondsSinceEpoch(
+                                  ((row['created_at'] as int?) ?? 0) * 1000,
+                                );
+                                final created = DateFormat(
+                                  'yyyy-MM-dd HH:mm',
+                                ).format(dt);
+                                return DataRow(
+                                  cells: [
+                                    DataCell(
+                                      Text((row['full_name'] as String?) ?? ''),
+                                    ),
+                                    DataCell(
+                                      Text((row['phone'] as String?) ?? ''),
+                                    ),
+                                    DataCell(
+                                      Text((row['gender'] as String?) ?? ''),
+                                    ),
+                                    DataCell(
+                                      Text((row['cnic'] as String?) ?? ''),
+                                    ),
+                                    DataCell(Text(created)),
+                                    DataCell(
+                                      Row(
                                         children: [
                                           IconButton(
                                             tooltip: 'View / Edit',
                                             icon: const Icon(Icons.edit),
-                                            onPressed: () => _openForm(id: row['id'] as String),
+                                            onPressed: () => _openForm(
+                                              id: row['id'] as String,
+                                            ),
                                           ),
                                           const SizedBox(width: 4),
                                           IconButton(
                                             tooltip: 'Soft Delete',
-                                            icon: const Icon(Icons.delete_outline),
+                                            icon: const Icon(
+                                              Icons.delete_outline,
+                                            ),
                                             onPressed: () async {
                                               final confirm = await showDialog<bool>(
                                                 context: context,
                                                 builder: (ctx) => AlertDialog(
-                                                  title: const Text('Delete Patient'),
-                                                  content: const Text('Are you sure you want to soft delete this patient?'),
+                                                  title: const Text(
+                                                    'Delete Patient',
+                                                  ),
+                                                  content: const Text(
+                                                    'Are you sure you want to soft delete this patient?',
+                                                  ),
                                                   actions: [
                                                     TextButton(
-                                                      onPressed: () => Navigator.pop(ctx, false),
-                                                      child: const Text('Cancel'),
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            ctx,
+                                                            false,
+                                                          ),
+                                                      child: const Text(
+                                                        'Cancel',
+                                                      ),
                                                     ),
                                                     FilledButton(
-                                                      onPressed: () => Navigator.pop(ctx, true),
-                                                      child: const Text('Delete'),
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            ctx,
+                                                            true,
+                                                          ),
+                                                      child: const Text(
+                                                        'Delete',
+                                                      ),
                                                     ),
                                                   ],
                                                 ),
                                               );
                                               if (confirm == true) {
-                                                final repo = ref.read(patientsRepositoryProvider);
-                                                await repo.softDeletePatient(row['id'] as String);
+                                                final repo = ref.read(
+                                                  patientsRepositoryProvider,
+                                                );
+                                                await repo.softDeletePatient(
+                                                  row['id'] as String,
+                                                );
                                                 _refresh();
                                                 if (mounted) {
-                                                  ScaffoldMessenger.of(context).showSnackBar(
-                                                    const SnackBar(content: Text('Patient deleted')),
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Patient deleted',
+                                                      ),
+                                                    ),
                                                   );
                                                 }
                                               }
                                             },
                                           ),
                                         ],
-                                      )),
-                                    ],
-                                  );
-                                }).toList(),
-                              ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
                             ),
                           ),
                         ),
