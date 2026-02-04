@@ -5,6 +5,9 @@ import '../../orders/data/test_orders_providers.dart';
 import '../../orders/data/test_order_models.dart';
 import 'create_order_screen.dart';
 import '../../samples/ui/collect_samples_screen.dart';
+import '../../samples/data/samples_providers.dart';
+import '../../billing/data/invoices_providers.dart';
+import '../../billing/ui/invoice_detail_screen.dart';
 
 class OrdersListScreen extends ConsumerStatefulWidget {
   const OrdersListScreen({super.key});
@@ -38,6 +41,16 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
   String _formatDate(int ts) {
     final dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
     return DateFormat('yyyy-MM-dd HH:mm').format(dt);
+  }
+
+  Future<void> _nudgeForward(String orderId) async {
+    await ref.read(samplesRepositoryProvider).nudgeOrderForward(orderId);
+    _refresh();
+  }
+
+  Future<void> _nudgeBackward(String orderId) async {
+    await ref.read(samplesRepositoryProvider).nudgeOrderBackward(orderId);
+    _refresh();
   }
 
   @override
@@ -107,6 +120,43 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
                                     DataCell(
                                       Row(
                                         children: [
+                                          IconButton(
+                                            tooltip: 'Nudge Back',
+                                            icon: const Icon(
+                                              Icons.arrow_back_ios_new,
+                                            ),
+                                            onPressed: () =>
+                                                _nudgeBackward(o.id),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Nudge Forward',
+                                            icon: const Icon(
+                                              Icons.arrow_forward_ios,
+                                            ),
+                                            onPressed: () =>
+                                                _nudgeForward(o.id),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Generate Invoice',
+                                            icon: const Icon(
+                                              Icons.receipt_long,
+                                            ),
+                                            onPressed: () async {
+                                              final repo = ref.read(
+                                                invoicesRepositoryProvider,
+                                              );
+                                              final invId = await repo
+                                                  .createInvoice(o.id);
+                                              await Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      InvoiceDetailScreen(
+                                                        invoiceId: invId,
+                                                      ),
+                                                ),
+                                              );
+                                            },
+                                          ),
                                           IconButton(
                                             tooltip: 'View',
                                             icon: const Icon(

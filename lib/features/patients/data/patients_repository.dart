@@ -1,4 +1,5 @@
 import 'package:riverpod/riverpod.dart';
+import 'package:sqlite3/sqlite3.dart' as sq3;
 import '../../../core/database/base_repository.dart';
 
 class PatientsRepository extends BaseRepository {
@@ -14,6 +15,16 @@ class PatientsRepository extends BaseRepository {
     String? referredBy,
   }) async {
     final d = await db;
+    final cnicVal = cnic?.trim();
+    if (cnicVal != null && cnicVal.isNotEmpty) {
+      final dup = d.select(
+        'SELECT id FROM patients WHERE cnic = ? AND deleted_at IS NULL LIMIT 1',
+        [cnicVal],
+      );
+      if (dup.isNotEmpty) {
+        throw StateError('A patient with this CNIC already exists.');
+      }
+    }
     final id = newId();
     final ts = nowSec();
     final stmt = d.prepare('''
@@ -25,7 +36,7 @@ class PatientsRepository extends BaseRepository {
       stmt.execute([
         id,
         fullName.trim(),
-        cnic?.trim(),
+        cnicVal,
         dateOfBirthSec,
         gender,
         phone?.trim(),
@@ -35,6 +46,13 @@ class PatientsRepository extends BaseRepository {
         ts,
       ]);
       return id;
+    } on sq3.SqliteException catch (e) {
+      final msg = e.message.toLowerCase();
+      if (e.extendedResultCode == 2067 ||
+          msg.contains('unique') && msg.contains('patients.cnic')) {
+        throw StateError('A patient with this CNIC already exists.');
+      }
+      rethrow;
     } finally {
       stmt.dispose();
     }
@@ -155,6 +173,18 @@ class PatientsRepository extends BaseRepository {
     String? referredBy,
   }) async {
     final d = await db;
+    if (cnic != null) {
+      final newCnic = cnic.trim();
+      if (newCnic.isNotEmpty) {
+        final dup = d.select(
+          'SELECT id FROM patients WHERE cnic = ? AND id <> ? AND deleted_at IS NULL LIMIT 1',
+          [newCnic, id],
+        );
+        if (dup.isNotEmpty) {
+          throw StateError('Another patient with this CNIC already exists.');
+        }
+      }
+    }
     final fields = <String>[];
     final values = <Object?>[];
     if (fullName != null) {
@@ -195,6 +225,13 @@ class PatientsRepository extends BaseRepository {
     try {
       stmt.execute(values);
       return d.getUpdatedRows();
+    } on sq3.SqliteException catch (e) {
+      final msg = e.message.toLowerCase();
+      if (e.extendedResultCode == 2067 ||
+          msg.contains('unique') && msg.contains('patients.cnic')) {
+        throw StateError('Another patient with this CNIC already exists.');
+      }
+      rethrow;
     } finally {
       stmt.dispose();
     }

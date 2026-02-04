@@ -5,7 +5,7 @@ import '../../features/dashboard/screen/dashboard_screen.dart';
 import '../../features/patients/ui/patients_list_screen.dart';
 import '../../features/orders/ui/orders_list_screen.dart';
 import '../../features/tests/ui/tests_list_screen.dart';
-import '../../features/billing/screen/billing_screen.dart';
+import '../../features/billing/ui/invoices_list_screen.dart';
 import '../../features/samples/screen/samples_screen.dart';
 import '../../features/results/screen/results_screen.dart';
 import '../../features/reports/screen/reports_screen.dart';
@@ -37,7 +37,7 @@ class AppShell extends ConsumerWidget {
           content = const TestsListScreen();
           break;
         case AppSection.billing:
-          content = const BillingScreen();
+          content = const InvoicesListScreen();
           break;
         case AppSection.samples:
           content = const SamplesScreen();

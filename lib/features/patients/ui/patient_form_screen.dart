@@ -40,8 +40,12 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
       dateOfBirthSec: null,
       gender: _gender!,
       phone: _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-      address: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
-      referredBy: _referredByCtrl.text.trim().isEmpty ? null : _referredByCtrl.text.trim(),
+      address: _addressCtrl.text.trim().isEmpty
+          ? null
+          : _addressCtrl.text.trim(),
+      referredBy: _referredByCtrl.text.trim().isEmpty
+          ? null
+          : _referredByCtrl.text.trim(),
     );
   }
 
@@ -71,9 +75,12 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
-      );
+      final friendly = e is StateError
+          ? e.message
+          : 'Could not save patient. Please check the details and try again.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendly)));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -82,12 +89,12 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.patientId != null;
-    final asyncPatient = isEdit ? ref.watch(patientByIdProvider(widget.patientId!)) : const AsyncValue.data(null);
+    final asyncPatient = isEdit
+        ? ref.watch(patientByIdProvider(widget.patientId!))
+        : const AsyncValue.data(null);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(isEdit ? 'Edit Patient' : 'Add Patient'),
-      ),
+      appBar: AppBar(title: Text(isEdit ? 'Edit Patient' : 'Add Patient')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: asyncPatient.when(
@@ -116,9 +123,13 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                           Expanded(
                             child: TextFormField(
                               controller: _nameCtrl,
-                              decoration: const InputDecoration(labelText: 'Full Name *'),
+                              decoration: const InputDecoration(
+                                labelText: 'Full Name *',
+                              ),
                               textInputAction: TextInputAction.next,
-                              validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -126,13 +137,25 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                             child: DropdownButtonFormField<String>(
                               value: _gender,
                               items: const [
-                                DropdownMenuItem(value: 'male', child: Text('Male')),
-                                DropdownMenuItem(value: 'female', child: Text('Female')),
-                                DropdownMenuItem(value: 'other', child: Text('Other')),
+                                DropdownMenuItem(
+                                  value: 'male',
+                                  child: Text('Male'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'female',
+                                  child: Text('Female'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'other',
+                                  child: Text('Other'),
+                                ),
                               ],
-                              decoration: const InputDecoration(labelText: 'Gender *'),
+                              decoration: const InputDecoration(
+                                labelText: 'Gender *',
+                              ),
                               onChanged: (v) => setState(() => _gender = v),
-                              validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                              validator: (v) =>
+                                  (v == null || v.isEmpty) ? 'Required' : null,
                             ),
                           ),
                         ],
@@ -143,7 +166,9 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                           Expanded(
                             child: TextFormField(
                               controller: _cnicCtrl,
-                              decoration: const InputDecoration(labelText: 'CNIC'),
+                              decoration: const InputDecoration(
+                                labelText: 'CNIC',
+                              ),
                               textInputAction: TextInputAction.next,
                             ),
                           ),
@@ -151,7 +176,9 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                           Expanded(
                             child: TextFormField(
                               controller: _phoneCtrl,
-                              decoration: const InputDecoration(labelText: 'Phone'),
+                              decoration: const InputDecoration(
+                                labelText: 'Phone',
+                              ),
                               textInputAction: TextInputAction.next,
                             ),
                           ),
@@ -166,14 +193,18 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _referredByCtrl,
-                        decoration: const InputDecoration(labelText: 'Referred By'),
+                        decoration: const InputDecoration(
+                          labelText: 'Referred By',
+                        ),
                       ),
                       const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           OutlinedButton(
-                            onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+                            onPressed: _saving
+                                ? null
+                                : () => Navigator.of(context).pop(false),
                             child: const Text('Cancel'),
                           ),
                           const SizedBox(width: 12),

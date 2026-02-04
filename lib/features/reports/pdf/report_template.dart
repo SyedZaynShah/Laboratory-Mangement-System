@@ -5,11 +5,19 @@ import 'package:pdf/widgets.dart' as pw;
 
 class PdfReportData {
   final String labName;
+  final String? address;
+  final String? phone;
+  final String? email;
+  final Uint8List? logoBytes;
   final String patientName;
   final String patientId;
   final List<PdfTestRow> rows;
   PdfReportData({
     required this.labName,
+    this.address,
+    this.phone,
+    this.email,
+    this.logoBytes,
     required this.patientName,
     required this.patientId,
     required this.rows,
@@ -46,15 +54,44 @@ Future<Uint8List> buildReportPdf(PdfReportData data) async {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text(
-                    data.labName,
-                    style: pw.TextStyle(
-                      fontSize: 20,
-                      fontWeight: pw.FontWeight.bold,
-                      color: baseColor,
-                    ),
+                  pw.Row(
+                    children: [
+                      if (data.logoBytes != null)
+                        pw.Container(
+                          width: 48,
+                          height: 48,
+                          margin: const pw.EdgeInsets.only(right: 12),
+                          child: pw.Image(pw.MemoryImage(data.logoBytes!)),
+                        ),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            data.labName,
+                            style: pw.TextStyle(
+                              fontSize: 20,
+                              fontWeight: pw.FontWeight.bold,
+                              color: baseColor,
+                            ),
+                          ),
+                          if ((data.address ?? '').isNotEmpty)
+                            pw.Text(
+                              data.address!,
+                              style: const pw.TextStyle(fontSize: 10),
+                            ),
+                          pw.Text(
+                            [
+                              data.phone,
+                              data.email,
+                            ].where((e) => (e ?? '').isNotEmpty).join(' · '),
+                            style: const pw.TextStyle(fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                   pw.Text(
                     'Patient ID: ${data.patientId}',
@@ -163,6 +200,18 @@ Future<Uint8List> buildReportPdf(PdfReportData data) async {
                 ],
               ),
               pw.Spacer(),
+              pw.Divider(),
+              pw.SizedBox(height: 4),
+              pw.Align(
+                alignment: pw.Alignment.center,
+                child: pw.Text(
+                  'This is a computer-generated report',
+                  style: const pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+              ),
               pw.Align(
                 alignment: pw.Alignment.centerRight,
                 child: pw.Column(

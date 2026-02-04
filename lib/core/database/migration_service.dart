@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart' as sq3;
 
 class DatabaseMigrationService {
-  static const int latestVersion = 3;
+  static const int latestVersion = 7;
 
   final sq3.Database db;
   DatabaseMigrationService(this.db);
@@ -40,6 +40,38 @@ class DatabaseMigrationService {
         debugPrint('[DB] Migrated to schema version 3');
       }
     }
+    if (currentVersion < 4) {
+      _migrateToV4();
+      _setUserVersion(4);
+      _recordSchemaMigration(4);
+      if (kDebugMode) {
+        debugPrint('[DB] Migrated to schema version 4');
+      }
+    }
+    if (currentVersion < 5) {
+      _migrateToV5();
+      _setUserVersion(5);
+      _recordSchemaMigration(5);
+      if (kDebugMode) {
+        debugPrint('[DB] Migrated to schema version 5');
+      }
+    }
+    if (currentVersion < 6) {
+      _migrateToV6();
+      _setUserVersion(6);
+      _recordSchemaMigration(6);
+      if (kDebugMode) {
+        debugPrint('[DB] Migrated to schema version 6');
+      }
+    }
+    if (currentVersion < 7) {
+      _migrateToV7();
+      _setUserVersion(7);
+      _recordSchemaMigration(7);
+      if (kDebugMode) {
+        debugPrint('[DB] Migrated to schema version 7');
+      }
+    }
   }
 
   int _getUserVersion() {
@@ -56,6 +88,13 @@ class DatabaseMigrationService {
   }
 
   void _recordSchemaMigration(int version) {
+    // Ensure table exists even for databases created before v1 introduced it
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY,
+        applied_at INTEGER NOT NULL
+      );
+    ''');
     final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     db.execute(
       'INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (?, ?);',
@@ -358,8 +397,10 @@ class DatabaseMigrationService {
       );
 
       db.execute('COMMIT;');
+      db.execute('PRAGMA foreign_keys = ON;');
     } catch (e) {
       db.execute('ROLLBACK;');
+      db.execute('PRAGMA foreign_keys = ON;');
       rethrow;
     }
   }
@@ -434,6 +475,224 @@ class DatabaseMigrationService {
         'CREATE INDEX idx_samples_collected_at ON samples(collected_at);',
       );
 
+      db.execute('COMMIT;');
+    } catch (e) {
+      db.execute('ROLLBACK;');
+      rethrow;
+    }
+  }
+
+  void _migrateToV4() {
+    db.execute('BEGIN;');
+    try {
+      // Drop legacy test_results that used patient_test_id to prevent index errors
+      final tables = db.select(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='test_results';",
+      );
+      if (tables.isNotEmpty) {
+        final cols = db.select("PRAGMA table_info('test_results');");
+        final hasNew = cols.any((r) {
+          final n = r['name'];
+          return n == 'test_order_item_id';
+        });
+        if (!hasNew) {
+          db.execute('DROP TABLE IF EXISTS test_results;');
+        }
+      }
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS test_results (
+          id TEXT PRIMARY KEY,
+          test_order_item_id TEXT NOT NULL UNIQUE REFERENCES test_order_items(id) ON UPDATE CASCADE ON DELETE CASCADE,
+          value_text TEXT,
+          value_num REAL,
+          reference_low REAL,
+          reference_high REAL,
+          reference_text TEXT,
+          is_abnormal INTEGER NOT NULL DEFAULT 0 CHECK(is_abnormal IN (0,1)),
+          validated_by TEXT REFERENCES users(id),
+          validated_at INTEGER,
+          remarks TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        );
+      ''');
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_results_item ON test_results(test_order_item_id);',
+      );
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_results_validated_at ON test_results(validated_at);',
+      );
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_results_abnormal ON test_results(is_abnormal);',
+      );
+
+      db.execute('COMMIT;');
+    } catch (e) {
+      db.execute('ROLLBACK;');
+      rethrow;
+    }
+  }
+
+  void _migrateToV5() {
+    db.execute('BEGIN;');
+    try {
+      // Recreate invoice_items to reference test_order_items rather than patient_tests
+      db.execute('DROP TABLE IF EXISTS invoice_items;');
+      db.execute('''
+        CREATE TABLE invoice_items (
+          id TEXT PRIMARY KEY,
+          invoice_id TEXT NOT NULL REFERENCES invoices(id) ON UPDATE CASCADE ON DELETE CASCADE,
+          test_order_item_id TEXT NOT NULL REFERENCES test_order_items(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+          test_id TEXT NOT NULL REFERENCES tests_master(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+          description TEXT,
+          qty INTEGER NOT NULL DEFAULT 1 CHECK(qty > 0),
+          unit_price_cents INTEGER NOT NULL,
+          discount_cents INTEGER NOT NULL DEFAULT 0,
+          line_total_cents INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        );
+      ''');
+      db.execute(
+        'CREATE UNIQUE INDEX idx_unique_invoice_item ON invoice_items(invoice_id, test_order_item_id);',
+      );
+      db.execute(
+        'CREATE INDEX idx_invoice_items_invoice ON invoice_items(invoice_id);',
+      );
+
+      db.execute('COMMIT;');
+    } catch (e) {
+      db.execute('ROLLBACK;');
+      rethrow;
+    }
+  }
+
+  void _migrateToV6() {
+    db.execute('PRAGMA foreign_keys = OFF;');
+    db.execute('BEGIN;');
+    try {
+      // Ensure audit_logs index on changed_by exists
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_audit_changed_by ON audit_logs(changed_by);',
+      );
+
+      // Widen users.role CHECK to include new roles. SQLite can't alter CHECK directly,
+      // so recreate table if current schema lacks the roles.
+      final cols = db.select("PRAGMA table_info('users');");
+      final hasUsers = cols.isNotEmpty;
+      if (hasUsers) {
+        final usersSqlRow = db.select(
+          "SELECT sql FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1;",
+        );
+        final usersSql = usersSqlRow.isEmpty
+            ? ''
+            : (usersSqlRow.first['sql'] as String? ?? '');
+        final needsRecreate =
+            !usersSql.contains("'pathologist'") ||
+            !usersSql.contains("'accountant'");
+        if (needsRecreate) {
+          final backupRow = db.select(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='users_old_v5' LIMIT 1;",
+          );
+          final backupExists = backupRow.isNotEmpty;
+          if (backupExists) {
+            // If backup exists from a previous attempt, ensure a clean users table
+            final existsUsersRow = db.select(
+              "SELECT name FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1;",
+            );
+            final existsUsers = existsUsersRow.isNotEmpty;
+            if (existsUsers) {
+              db.execute('DROP TABLE users;');
+            }
+            db.execute('''
+              CREATE TABLE users (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('admin','receptionist','technician','pathologist','accountant')),
+                phone TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                deleted_at INTEGER
+              );
+            ''');
+            db.execute('''
+              INSERT INTO users (
+                id, email, password_hash, name, role, phone, is_active, created_at, updated_at, deleted_at
+              )
+              SELECT id, email, password_hash, name, role, phone, is_active, created_at, updated_at, deleted_at
+              FROM users_old_v5;
+            ''');
+            db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);',
+            );
+          } else {
+            // Normal path: rename, create, copy
+            db.execute('ALTER TABLE users RENAME TO users_old_v5;');
+            db.execute('''
+              CREATE TABLE users (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('admin','receptionist','technician','pathologist','accountant')),
+                phone TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                deleted_at INTEGER
+              );
+            ''');
+            db.execute('''
+              INSERT INTO users (
+                id, email, password_hash, name, role, phone, is_active, created_at, updated_at, deleted_at
+              )
+              SELECT id, email, password_hash, name, role, phone, is_active, created_at, updated_at, deleted_at
+              FROM users_old_v5;
+            ''');
+            db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);',
+            );
+          }
+        }
+      }
+
+      db.execute('COMMIT;');
+      db.execute('PRAGMA foreign_keys = ON;');
+    } catch (e) {
+      db.execute('ROLLBACK;');
+      db.execute('PRAGMA foreign_keys = ON;');
+      rethrow;
+    }
+  }
+
+  void _migrateToV7() {
+    db.execute('BEGIN;');
+    try {
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS lab_profile (
+          id TEXT PRIMARY KEY,
+          lab_name TEXT NOT NULL,
+          address TEXT,
+          phone TEXT,
+          email TEXT,
+          logo_path TEXT,
+          created_at INTEGER NOT NULL
+        );
+      ''');
+      final rows = db.select("SELECT COUNT(1) AS c FROM lab_profile;");
+      final c = (rows.isEmpty ? 0 : (rows.first['c'] as int? ?? 0));
+      if (c == 0) {
+        final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        db.execute(
+          'INSERT INTO lab_profile (id, lab_name, address, phone, email, logo_path, created_at) VALUES (?,?,?,?,?,?,?)',
+          ['lab', 'Your Lab Name', '', '', '', null, ts],
+        );
+      }
       db.execute('COMMIT;');
     } catch (e) {
       db.execute('ROLLBACK;');

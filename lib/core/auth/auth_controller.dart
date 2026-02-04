@@ -11,8 +11,20 @@ class CurrentUserRole extends Notifier<UserRole?> {
   void clear() => state = null;
 }
 
+class CurrentUserId extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void set(String? id) => state = id;
+  void clear() => state = null;
+}
+
 final currentUserRoleProvider = NotifierProvider<CurrentUserRole, UserRole?>(
   () => CurrentUserRole(),
+);
+
+final currentUserIdProvider = NotifierProvider<CurrentUserId, String?>(
+  () => CurrentUserId(),
 );
 
 final authControllerProvider = Provider<AuthController>(
@@ -26,14 +38,16 @@ class AuthController {
   Future<bool> signIn(String email, String password) async {
     final db = await ref.read(appDatabaseProvider.future);
     final stmt = db.db.prepare(
-      'SELECT role FROM users WHERE email = ? AND password_hash = ? AND is_active = 1 LIMIT 1',
+      'SELECT id, role FROM users WHERE email = ? AND password_hash = ? AND is_active = 1 LIMIT 1',
     );
     try {
       final result = stmt.select([email.trim(), password]);
       if (result.isNotEmpty) {
         final roleStr = result.first['role'] as String;
+        final uid = result.first['id'] as String;
         final role = _roleFromString(roleStr);
         ref.read(currentUserRoleProvider.notifier).set(role);
+        ref.read(currentUserIdProvider.notifier).set(uid);
         return true;
       }
       return false;
@@ -49,6 +63,7 @@ class AuthController {
 
   Future<void> signOut() async {
     ref.read(currentUserRoleProvider.notifier).clear();
+    ref.read(currentUserIdProvider.notifier).clear();
   }
 
   Future<bool> hasAnyUsers() async {
@@ -101,6 +116,10 @@ class AuthController {
         return UserRole.receptionist;
       case 'technician':
         return UserRole.technician;
+      case 'pathologist':
+        return UserRole.pathologist;
+      case 'accountant':
+        return UserRole.accountant;
       default:
         return UserRole.receptionist;
     }

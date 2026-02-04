@@ -7,6 +7,7 @@ import 'core/auth/auth_controller.dart';
 import 'features/auth/screen/login_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const ProviderScope(child: MyApp()));
 }
 
