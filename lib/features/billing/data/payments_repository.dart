@@ -30,11 +30,15 @@ class PaymentsRepository extends BaseRepository {
     final paid = (totals['paid'] as int?) ?? 0;
     var balance = total - paid;
     if (balance < 0) balance = 0;
-    String status = 'open';
+    String status = 'unpaid';
     if (total == 0) {
       status = 'draft';
+    } else if (paid <= 0) {
+      status = 'unpaid';
     } else if (balance == 0) {
       status = 'paid';
+    } else {
+      status = 'partially_paid';
     }
     final upd = d.prepare('''
       UPDATE invoices
@@ -65,6 +69,13 @@ class PaymentsRepository extends BaseRepository {
     final pid = newId();
     d.execute('BEGIN');
     try {
+      final inv = d.select(
+        'SELECT id FROM invoices WHERE id = ? AND deleted_at IS NULL LIMIT 1',
+        [invoiceId],
+      );
+      if (inv.isEmpty) {
+        throw StateError('Invoice not found');
+      }
       final ins = d.prepare('''
         INSERT INTO payments(id, invoice_id, amount_cents, method, reference, received_at, received_by, notes, created_at, updated_at)
         VALUES (?,?,?,?,?,?,?,?,?,?)

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_controller.dart';
+import '../../../core/widgets/gradient_text.dart';
 
 class InitialAdminSetupScreen extends ConsumerStatefulWidget {
   const InitialAdminSetupScreen({super.key});
@@ -41,7 +42,7 @@ class _InitialAdminSetupScreenState
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
+                    GradientText(
                       'Initial Admin Setup',
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(fontWeight: FontWeight.bold),

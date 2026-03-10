@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../data/tests_providers.dart';
+import '../../../core/widgets/floating_dropdown_form_field.dart';
 import '../data/test_model.dart';
+import '../data/tests_providers.dart';
 
 class TestFormScreen extends ConsumerStatefulWidget {
   final String? testId;
@@ -57,7 +58,9 @@ class _TestFormScreenState extends ConsumerState<TestFormScreen> {
     final max = _parseDouble(_maxCtrl.text);
     if (min != null && max != null && min > max) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Normal Range Min cannot be greater than Max')),
+        const SnackBar(
+          content: Text('Normal Range Min cannot be greater than Max'),
+        ),
       );
       return;
     }
@@ -68,13 +71,17 @@ class _TestFormScreenState extends ConsumerState<TestFormScreen> {
         id: widget.testId,
         testCode: _codeCtrl.text.trim(),
         testName: _nameCtrl.text.trim(),
-        category: _categoryCtrl.text.trim().isEmpty ? null : _categoryCtrl.text.trim(),
+        category: _categoryCtrl.text.trim().isEmpty
+            ? null
+            : _categoryCtrl.text.trim(),
         sampleType: _sampleType!,
         unit: _unitCtrl.text.trim().isEmpty ? null : _unitCtrl.text.trim(),
         normalRangeMin: min,
         normalRangeMax: max,
         priceCents: _parsePriceCents(_priceCtrl.text),
-        clinicalNotes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        clinicalNotes: _notesCtrl.text.trim().isEmpty
+            ? null
+            : _notesCtrl.text.trim(),
         isActive: true,
       );
 
@@ -85,12 +92,15 @@ class _TestFormScreenState extends ConsumerState<TestFormScreen> {
         await repo.updateTest(model);
       }
       if (!mounted) return;
+
+      ref.invalidate(testsPageProvider(1));
+      ref.invalidate(testsSearchProvider(''));
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -99,7 +109,9 @@ class _TestFormScreenState extends ConsumerState<TestFormScreen> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.testId != null;
-    final asyncTest = isEdit ? ref.watch(testByIdProvider(widget.testId!)) : const AsyncValue.data(null);
+    final asyncTest = isEdit
+        ? ref.watch(testByIdProvider(widget.testId!))
+        : const AsyncValue.data(null);
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit Test' : 'Add Test')),
@@ -135,57 +147,87 @@ class _TestFormScreenState extends ConsumerState<TestFormScreen> {
                           Expanded(
                             child: TextFormField(
                               controller: _codeCtrl,
-                              decoration: const InputDecoration(labelText: 'Test Code *'),
+                              decoration: const InputDecoration(
+                                labelText: 'Test Code *',
+                              ),
                               textInputAction: TextInputAction.next,
-                              validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: TextFormField(
                               controller: _nameCtrl,
-                              decoration: const InputDecoration(labelText: 'Test Name *'),
+                              decoration: const InputDecoration(
+                                labelText: 'Test Name *',
+                              ),
                               textInputAction: TextInputAction.next,
-                              validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                       Row(
                         children: [
                           Expanded(
                             child: TextFormField(
                               controller: _categoryCtrl,
-                              decoration: const InputDecoration(labelText: 'Category'),
+                              decoration: const InputDecoration(
+                                labelText: 'Category',
+                              ),
                               textInputAction: TextInputAction.next,
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: DropdownButtonFormField<String>(
+                            child: FloatingDropdownFormField<String>(
                               value: _sampleType,
+                              labelText: 'Sample Type *',
                               items: const [
-                                DropdownMenuItem(value: 'Whole Blood', child: Text('Whole Blood')),
-                                DropdownMenuItem(value: 'Serum', child: Text('Serum')),
-                                DropdownMenuItem(value: 'Plasma', child: Text('Plasma')),
-                                DropdownMenuItem(value: 'Urine', child: Text('Urine')),
-                                DropdownMenuItem(value: 'Stool', child: Text('Stool')),
+                                FloatingDropdownItem(
+                                  value: 'Whole Blood',
+                                  label: 'Whole Blood',
+                                ),
+                                FloatingDropdownItem(
+                                  value: 'Serum',
+                                  label: 'Serum',
+                                ),
+                                FloatingDropdownItem(
+                                  value: 'Plasma',
+                                  label: 'Plasma',
+                                ),
+                                FloatingDropdownItem(
+                                  value: 'Urine',
+                                  label: 'Urine',
+                                ),
+                                FloatingDropdownItem(
+                                  value: 'Stool',
+                                  label: 'Stool',
+                                ),
                               ],
-                              decoration: const InputDecoration(labelText: 'Sample Type *'),
-                              onChanged: (v) => setState(() => _sampleType = v),
-                              validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                              onChanged: (v) {
+                                setState(() => _sampleType = v);
+                              },
+                              validator: (v) =>
+                                  (v == null || v.isEmpty) ? 'Required' : null,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                       Row(
                         children: [
                           Expanded(
                             child: TextFormField(
                               controller: _unitCtrl,
-                              decoration: const InputDecoration(labelText: 'Unit'),
+                              decoration: const InputDecoration(
+                                labelText: 'Unit',
+                              ),
                               textInputAction: TextInputAction.next,
                             ),
                           ),
@@ -193,21 +235,31 @@ class _TestFormScreenState extends ConsumerState<TestFormScreen> {
                           Expanded(
                             child: TextFormField(
                               controller: _priceCtrl,
-                              decoration: const InputDecoration(labelText: 'Price'),
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: 'Price',
+                              ),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
                               textInputAction: TextInputAction.next,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                       Row(
                         children: [
                           Expanded(
                             child: TextFormField(
                               controller: _minCtrl,
-                              decoration: const InputDecoration(labelText: 'Normal Range Min'),
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: 'Normal Range Min',
+                              ),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
                               textInputAction: TextInputAction.next,
                             ),
                           ),
@@ -215,8 +267,13 @@ class _TestFormScreenState extends ConsumerState<TestFormScreen> {
                           Expanded(
                             child: TextFormField(
                               controller: _maxCtrl,
-                              decoration: const InputDecoration(labelText: 'Normal Range Max'),
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: 'Normal Range Max',
+                              ),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
                             ),
                           ),
                         ],
@@ -224,7 +281,9 @@ class _TestFormScreenState extends ConsumerState<TestFormScreen> {
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _notesCtrl,
-                        decoration: const InputDecoration(labelText: 'Clinical Notes'),
+                        decoration: const InputDecoration(
+                          labelText: 'Clinical Notes',
+                        ),
                         maxLines: 3,
                       ),
                       const SizedBox(height: 24),
@@ -232,7 +291,9 @@ class _TestFormScreenState extends ConsumerState<TestFormScreen> {
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           OutlinedButton(
-                            onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+                            onPressed: _saving
+                                ? null
+                                : () => Navigator.of(context).pop(false),
                             child: const Text('Cancel'),
                           ),
                           const SizedBox(width: 12),

@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../patients/data/patients_providers.dart';
+import '../../patients/data/patients_repository.dart';
 import '../../tests/data/tests_providers.dart';
 import '../../tests/data/test_model.dart';
 import '../data/test_orders_providers.dart';
+import '../../billing/data/invoices_providers.dart';
+import '../../billing/ui/invoice_detail_screen.dart';
 
 class CreateOrderScreen extends ConsumerStatefulWidget {
   const CreateOrderScreen({super.key});
@@ -54,14 +57,32 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     final testIds = _selectedTests.map((t) => t.id!).toList();
     setState(() => _saving = true);
     try {
-      await ref
+      final orderId = await ref
           .read(testOrdersRepositoryProvider)
-          .createOrder(patientId: patientId, testIds: testIds);
+          .createOrder(
+            patientId: patientId,
+            testIds: testIds,
+            autoInvoice: true,
+          );
+      // Find the invoice for this order
+      final invoicesRepo = ref.read(invoicesRepositoryProvider);
+      final invoiceId = await invoicesRepo.getInvoiceIdForOrder(orderId);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Order created')));
-      Navigator.of(context).pop(true);
+      // Navigate to invoice detail for payment
+      if (invoiceId != null) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => InvoiceDetailScreen(invoiceId: invoiceId),
+          ),
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop(true);
+      } else {
+        Navigator.of(context).pop(true);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -209,6 +230,134 @@ class _SelectPatientDialogState extends ConsumerState<_SelectPatientDialog> {
   Timer? _debounce;
   String _q = '';
 
+  Future<void> _createPatientInline() async {
+    final nameCtrl = TextEditingController(text: _q);
+    final cnicCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final addressCtrl = TextEditingController();
+    final referredByCtrl = TextEditingController();
+    String gender = 'other';
+
+    try {
+      final created = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            title: const Text('Add Patient'),
+            content: SizedBox(
+              width: 520,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(labelText: 'Full Name'),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: gender,
+                    decoration: const InputDecoration(labelText: 'Gender'),
+                    items: const [
+                      DropdownMenuItem(value: 'male', child: Text('Male')),
+                      DropdownMenuItem(value: 'female', child: Text('Female')),
+                      DropdownMenuItem(value: 'other', child: Text('Other')),
+                    ],
+                    onChanged: (v) {
+                      setLocal(() => gender = v ?? 'other');
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: phoneCtrl,
+                    decoration: const InputDecoration(labelText: 'Phone'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: cnicCtrl,
+                    decoration: const InputDecoration(labelText: 'CNIC'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: addressCtrl,
+                    decoration: const InputDecoration(labelText: 'Address'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: referredByCtrl,
+                    decoration: const InputDecoration(labelText: 'Referred By'),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (nameCtrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Full name is required.')),
+                    );
+                    return;
+                  }
+                  Navigator.pop(ctx, true);
+                },
+                child: const Text('Create'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (created != true) return;
+
+      final repo = ref.read(patientsRepositoryProvider);
+      final id = await repo.createPatient(
+        fullName: nameCtrl.text.trim(),
+        cnic: cnicCtrl.text.trim().isEmpty ? null : cnicCtrl.text.trim(),
+        dateOfBirthSec: null,
+        gender: gender,
+        phone: phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
+        address: addressCtrl.text.trim().isEmpty
+            ? null
+            : addressCtrl.text.trim(),
+        referredBy: referredByCtrl.text.trim().isEmpty
+            ? null
+            : referredByCtrl.text.trim(),
+      );
+
+      final row = await repo.getPatientById(id);
+      if (row == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load created patient.')),
+        );
+        return;
+      }
+
+      ref.invalidate(patientsPageProvider(1));
+      ref.invalidate(patientsSearchProvider(''));
+      if (!mounted) return;
+      Navigator.of(context).pop(row);
+    } catch (e) {
+      if (!mounted) return;
+      final friendly = e is StateError
+          ? e.message
+          : 'Could not create patient. Please try again.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendly)));
+    } finally {
+      nameCtrl.dispose();
+      cnicCtrl.dispose();
+      phoneCtrl.dispose();
+      addressCtrl.dispose();
+      referredByCtrl.dispose();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -280,6 +429,10 @@ class _SelectPatientDialogState extends ConsumerState<_SelectPatientDialog> {
         ),
       ),
       actions: [
+        TextButton(
+          onPressed: _createPatientInline,
+          child: const Text('Add Patient'),
+        ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Close'),

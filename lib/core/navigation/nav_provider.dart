@@ -9,6 +9,7 @@ enum AppSection {
   samples,
   results,
   reports,
+  finance,
   settings,
 }
 

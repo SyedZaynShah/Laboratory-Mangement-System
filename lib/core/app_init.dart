@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'database/app_database.dart';
 import 'sync/sync_service.dart';
+import 'auth/auth_controller.dart';
 
 final appInitProvider = FutureProvider<void>((ref) async {
   await ref.read(appDatabaseProvider.future);
+  final auth = ref.read(authControllerProvider);
+  await auth.ensureSingleAdmin();
+  await auth.restoreSession();
   ref.read(syncServiceProvider).ensureStarted();
 });
 

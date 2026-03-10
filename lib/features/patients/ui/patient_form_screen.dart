@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/widgets/floating_dropdown_form_field.dart';
 import '../../patients/data/patients_providers.dart';
 import '../../patients/data/patients_repository.dart';
 
@@ -38,7 +39,7 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
       fullName: _nameCtrl.text.trim(),
       cnic: _cnicCtrl.text.trim().isEmpty ? null : _cnicCtrl.text.trim(),
       dateOfBirthSec: null,
-      gender: _gender!,
+      gender: _gender ?? 'other',
       phone: _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
       address: _addressCtrl.text.trim().isEmpty
           ? null
@@ -72,6 +73,9 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
         await _saveEdit(widget.patientId!);
       }
       if (!mounted) return;
+
+      ref.invalidate(patientsPageProvider(1));
+      ref.invalidate(patientsSearchProvider(''));
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
@@ -134,33 +138,31 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: DropdownButtonFormField<String>(
+                            child: FloatingDropdownFormField<String>(
                               value: _gender,
+                              labelText: 'Gender',
+                              helperText:
+                                  'Please select your gender (optional)',
                               items: const [
-                                DropdownMenuItem(
+                                FloatingDropdownItem(
                                   value: 'male',
-                                  child: Text('Male'),
+                                  label: 'Male',
                                 ),
-                                DropdownMenuItem(
+                                FloatingDropdownItem(
                                   value: 'female',
-                                  child: Text('Female'),
+                                  label: 'Female',
                                 ),
-                                DropdownMenuItem(
+                                FloatingDropdownItem(
                                   value: 'other',
-                                  child: Text('Other'),
+                                  label: 'Other',
                                 ),
                               ],
-                              decoration: const InputDecoration(
-                                labelText: 'Gender *',
-                              ),
                               onChanged: (v) => setState(() => _gender = v),
-                              validator: (v) =>
-                                  (v == null || v.isEmpty) ? 'Required' : null,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                       Row(
                         children: [
                           Expanded(
@@ -184,13 +186,13 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                       TextFormField(
                         controller: _addressCtrl,
                         decoration: const InputDecoration(labelText: 'Address'),
                         maxLines: 2,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                       TextFormField(
                         controller: _referredByCtrl,
                         decoration: const InputDecoration(

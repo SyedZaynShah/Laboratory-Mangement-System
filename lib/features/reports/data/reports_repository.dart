@@ -34,7 +34,8 @@ class ReportsRepository extends BaseRepository {
       where.add('o.status = ?');
       args.add(orderStatus);
     }
-    final sql = '''
+    final sql =
+        '''
       SELECT
         p.id AS patient_id,
         p.full_name AS patient_name,
@@ -63,7 +64,9 @@ class ReportsRepository extends BaseRepository {
       ORDER BY p.full_name, o.ordered_at DESC, t.name
     ''';
     final rows = d.select(sql, args);
-    return rows.map((e) => Map<String, Object?>.from(e)).toList(growable: false);
+    return rows
+        .map((e) => Map<String, Object?>.from(e))
+        .toList(growable: false);
   }
 
   Future<List<Map<String, Object?>>> fetchInvoiceReport({
@@ -76,7 +79,8 @@ class ReportsRepository extends BaseRepository {
     final where = <String>['i.deleted_at IS NULL'];
     final args = <Object?>[];
     if (invoiceId != null && invoiceId.isNotEmpty) {
-      where.add('i.id = ?');
+      where.add('(i.id = ? OR i.invoice_no = ?)');
+      args.add(invoiceId);
       args.add(invoiceId);
     }
     if (fromSec != null) {
@@ -91,7 +95,8 @@ class ReportsRepository extends BaseRepository {
       where.add('i.status = ?');
       args.add(status);
     }
-    final sql = '''
+    final sql =
+        '''
       SELECT
         i.id AS invoice_id,
         i.invoice_no,
@@ -121,7 +126,9 @@ class ReportsRepository extends BaseRepository {
       ORDER BY i.issued_at DESC, i.invoice_no, it.created_at
     ''';
     final rows = d.select(sql, args);
-    return rows.map((e) => Map<String, Object?>.from(e)).toList(growable: false);
+    return rows
+        .map((e) => Map<String, Object?>.from(e))
+        .toList(growable: false);
   }
 
   Future<Map<String, Object?>> fetchDailyLabSummary({

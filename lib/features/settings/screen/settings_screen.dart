@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../screen/backup_restore_screen.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../models/roles.dart';
@@ -20,6 +22,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _email = TextEditingController();
   String? _logoPath;
   bool _saving = false;
+  late Future<void> _loadFuture;
 
   @override
   void dispose() {
@@ -42,9 +45,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _pickLogo() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.image);
-    final path = result?.files.first.path;
-    if (path == null) return;
-    setState(() => _logoPath = path);
+    final pickedPath = result?.files.first.path;
+    if (pickedPath == null) return;
+    try {
+      final src = File(pickedPath);
+      if (!await src.exists()) return;
+      final dir = await getApplicationDocumentsDirectory();
+      final brandDir = Directory(
+        '${dir.path}${Platform.pathSeparator}lms_brand',
+      );
+      if (!await brandDir.exists()) {
+        await brandDir.create(recursive: true);
+      }
+      final dot = pickedPath.lastIndexOf('.');
+      final ext = (dot != -1) ? pickedPath.substring(dot) : '';
+      final destPath = '${brandDir.path}${Platform.pathSeparator}logo$ext';
+      await src.copy(destPath);
+      setState(() => _logoPath = destPath);
+    } catch (_) {
+      // Fallback: keep original path if copy fails
+      setState(() => _logoPath = pickedPath);
+    }
   }
 
   Future<void> _saveProfile() async {
@@ -71,7 +92,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final role = ref.watch(currentUserRoleProvider);
     return FutureBuilder(
-      future: _load(),
+      future: _loadFuture,
       builder: (context, snap) {
         return SingleChildScrollView(
           child: Align(
@@ -193,5 +214,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         );
       },
     );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFuture = _load();
   }
 }

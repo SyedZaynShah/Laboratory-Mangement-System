@@ -1,30 +1,50 @@
 import 'package:flutter/material.dart';
+import 'accent_card.dart';
 
 class KpiCard extends StatelessWidget {
   final String title;
   final String value;
-  final Color? color;
-  const KpiCard({super.key, required this.title, required this.value, this.color});
+  final IconData? icon;
+  final Color? accentColor;
+  final Widget? valueWidget;
+  const KpiCard({
+    super.key,
+    required this.title,
+    required this.value,
+    this.icon,
+    this.accentColor,
+    this.valueWidget,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Colors.black54)),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: color ?? Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
+    return AccentCard(
+      accentColor: accentColor,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (icon != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Icon(icon, color: Theme.of(context).colorScheme.primary),
             ),
-          ],
-        ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 6),
+                valueWidget ??
+                    Text(
+                      value,
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

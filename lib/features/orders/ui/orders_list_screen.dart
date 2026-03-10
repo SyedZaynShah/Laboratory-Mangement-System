@@ -5,9 +5,10 @@ import '../../orders/data/test_orders_providers.dart';
 import '../../orders/data/test_order_models.dart';
 import 'create_order_screen.dart';
 import '../../samples/ui/collect_samples_screen.dart';
-import '../../samples/data/samples_providers.dart';
 import '../../billing/data/invoices_providers.dart';
 import '../../billing/ui/invoice_detail_screen.dart';
+import '../../../core/widgets/status_pill.dart';
+import '../../../core/widgets/glass_surface.dart';
 
 class OrdersListScreen extends ConsumerStatefulWidget {
   const OrdersListScreen({super.key});
@@ -29,6 +30,9 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
       context,
     ).push<bool>(MaterialPageRoute(builder: (_) => const CreateOrderScreen()));
     if (ok == true) {
+      setState(() {
+        _page = 1;
+      });
       _refresh();
     }
   }
@@ -43,15 +47,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
     return DateFormat('yyyy-MM-dd HH:mm').format(dt);
   }
 
-  Future<void> _nudgeForward(String orderId) async {
-    await ref.read(samplesRepositoryProvider).nudgeOrderForward(orderId);
-    _refresh();
-  }
-
-  Future<void> _nudgeBackward(String orderId) async {
-    await ref.read(samplesRepositoryProvider).nudgeOrderBackward(orderId);
-    _refresh();
-  }
+  // Removed manual nudge helpers to enforce status driven by samples/results only
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +61,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
           Row(
             children: [
               const Spacer(),
-              ElevatedButton.icon(
+              FilledButton.icon(
                 onPressed: _openCreate,
                 icon: const Icon(Icons.add),
                 label: const Text('Create Order'),
@@ -85,144 +81,180 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
                 return Column(
                   children: [
                     Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 1000),
-                          child: SingleChildScrollView(
-                            child: DataTable(
-                              columns: const [
-                                DataColumn(label: Text('Order No')),
-                                DataColumn(label: Text('Patient Name')),
-                                DataColumn(label: Text('Tests Count')),
-                                DataColumn(label: Text('Samples')),
-                                DataColumn(label: Text('Total Amount')),
-                                DataColumn(label: Text('Status')),
-                                DataColumn(label: Text('Ordered At')),
-                                DataColumn(label: Text('Actions')),
-                              ],
-                              rows: orders.map((o) {
-                                return DataRow(
-                                  cells: [
-                                    DataCell(Text(o.orderNumber)),
-                                    DataCell(Text(o.patientName ?? '')),
-                                    DataCell(
-                                      Text((o.testsCount ?? 0).toString()),
-                                    ),
-                                    DataCell(
-                                      Text(
-                                        '${o.collectedCount ?? 0}/${o.testsCount ?? 0}',
-                                      ),
-                                    ),
-                                    DataCell(Text(_formatPrice(o.totalCents))),
-                                    DataCell(Text(o.status)),
-                                    DataCell(Text(_formatDate(o.orderedAt))),
-                                    DataCell(
-                                      Row(
-                                        children: [
-                                          IconButton(
-                                            tooltip: 'Nudge Back',
-                                            icon: const Icon(
-                                              Icons.arrow_back_ios_new,
-                                            ),
-                                            onPressed: () =>
-                                                _nudgeBackward(o.id),
-                                          ),
-                                          IconButton(
-                                            tooltip: 'Nudge Forward',
-                                            icon: const Icon(
-                                              Icons.arrow_forward_ios,
-                                            ),
-                                            onPressed: () =>
-                                                _nudgeForward(o.id),
-                                          ),
-                                          IconButton(
-                                            tooltip: 'Generate Invoice',
-                                            icon: const Icon(
-                                              Icons.receipt_long,
-                                            ),
-                                            onPressed: () async {
-                                              final repo = ref.read(
-                                                invoicesRepositoryProvider,
-                                              );
-                                              final invId = await repo
-                                                  .createInvoice(o.id);
-                                              await Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      InvoiceDetailScreen(
-                                                        invoiceId: invId,
-                                                      ),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                          IconButton(
-                                            tooltip: 'View',
-                                            icon: const Icon(
-                                              Icons.visibility_outlined,
-                                            ),
-                                            onPressed: () async {
-                                              await showDialog(
-                                                context: context,
-                                                builder: (ctx) => AlertDialog(
-                                                  title: Text(
-                                                    'Order ${o.orderNumber}',
-                                                  ),
-                                                  content: Column(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        'Patient: ${o.patientName ?? ''}',
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  actions: [
-                                                    TextButton(
-                                                      onPressed: () =>
-                                                          Navigator.pop(ctx),
-                                                      child: const Text(
-                                                        'Close',
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                          const SizedBox(width: 4),
-                                          IconButton(
-                                            tooltip: 'Collect Samples',
-                                            icon: const Icon(
-                                              Icons.biotech_outlined,
-                                            ),
-                                            onPressed: () async {
-                                              final ok =
-                                                  await Navigator.of(
-                                                    context,
-                                                  ).push<bool>(
-                                                    MaterialPageRoute(
-                                                      builder: (_) =>
-                                                          CollectSamplesScreen(
-                                                            orderId: o.id,
-                                                          ),
-                                                    ),
-                                                  );
-                                              if (ok == true) {
-                                                _refresh();
+                      child: GlassSurface(
+                        padding: const EdgeInsets.all(12),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 1000),
+                            child: SingleChildScrollView(
+                              child: DataTable(
+                                columns: const [
+                                  DataColumn(label: Text('Order No')),
+                                  DataColumn(label: Text('Patient Name')),
+                                  DataColumn(
+                                    label: Text('Tests Count'),
+                                    numeric: true,
+                                  ),
+                                  DataColumn(label: Text('Samples')),
+                                  DataColumn(
+                                    label: Text('Total Amount'),
+                                    numeric: true,
+                                  ),
+                                  DataColumn(label: Text('Status')),
+                                  DataColumn(label: Text('Ordered At')),
+                                  DataColumn(label: Text('Actions')),
+                                ],
+                                rows: orders
+                                    .asMap()
+                                    .entries
+                                    .map((e) {
+                                      final i = e.key;
+                                      final o = e.value;
+                                      return DataRow(
+                                        color:
+                                            MaterialStateProperty.resolveWith((
+                                              states,
+                                            ) {
+                                              if (states.contains(
+                                                MaterialState.hovered,
+                                              )) {
+                                                return Theme.of(context)
+                                                    .colorScheme
+                                                    .secondary
+                                                    .withOpacity(0.10);
                                               }
-                                            },
+                                              return i.isEven
+                                                  ? const Color(0x0AFFFFFF)
+                                                  : const Color(0x06FFFFFF);
+                                            }),
+                                        cells: [
+                                          DataCell(Text(o.orderNumber)),
+                                          DataCell(Text(o.patientName ?? '')),
+                                          DataCell(
+                                            Align(
+                                              alignment: Alignment.centerRight,
+                                              child: Text(
+                                                (o.testsCount ?? 0).toString(),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              '${o.collectedCount ?? 0}/${o.testsCount ?? 0}',
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Align(
+                                              alignment: Alignment.centerRight,
+                                              child: Text(
+                                                _formatPrice(o.totalCents),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(StatusPill(o.status)),
+                                          DataCell(
+                                            Text(_formatDate(o.orderedAt)),
+                                          ),
+                                          DataCell(
+                                            Row(
+                                              children: [
+                                                Tooltip(
+                                                  message: 'Invoice',
+                                                  child: IconButton(
+                                                    icon: const Icon(
+                                                      Icons.receipt_long,
+                                                    ),
+                                                    onPressed: () async {
+                                                      final repo = ref.read(
+                                                        invoicesRepositoryProvider,
+                                                      );
+                                                      final invId = await repo
+                                                          .createInvoice(o.id);
+                                                      await Navigator.of(
+                                                        context,
+                                                      ).push(
+                                                        MaterialPageRoute(
+                                                          builder: (_) =>
+                                                              InvoiceDetailScreen(
+                                                                invoiceId:
+                                                                    invId,
+                                                              ),
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  tooltip: 'View',
+                                                  icon: const Icon(
+                                                    Icons.visibility_outlined,
+                                                  ),
+                                                  onPressed: () async {
+                                                    await showDialog(
+                                                      context: context,
+                                                      builder: (ctx) => AlertDialog(
+                                                        title: Text(
+                                                          'Order ${o.orderNumber}',
+                                                        ),
+                                                        content: Column(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            Text(
+                                                              'Patient: ${o.patientName ?? ''}',
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        actions: [
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                  ctx,
+                                                                ),
+                                                            child: const Text(
+                                                              'Close',
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                                const SizedBox(width: 4),
+                                                IconButton(
+                                                  tooltip: 'Collect Samples',
+                                                  icon: const Icon(
+                                                    Icons.biotech_outlined,
+                                                  ),
+                                                  onPressed: () async {
+                                                    final ok =
+                                                        await Navigator.of(
+                                                          context,
+                                                        ).push<bool>(
+                                                          MaterialPageRoute(
+                                                            builder: (_) =>
+                                                                CollectSamplesScreen(
+                                                                  orderId: o.id,
+                                                                ),
+                                                          ),
+                                                        );
+                                                    if (ok == true) {
+                                                      _refresh();
+                                                    }
+                                                  },
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ],
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }).toList(),
+                                      );
+                                    })
+                                    .toList(growable: false),
+                              ),
                             ),
                           ),
                         ),

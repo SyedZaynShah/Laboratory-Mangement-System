@@ -10,6 +10,8 @@ import 'package:printing/printing.dart';
 import '../../reports/data/reports_providers.dart';
 import '../../patients/data/patients_providers.dart';
 import '../pdf/report_template.dart';
+import '../../billing/data/invoices_providers.dart';
+import '../../billing/pdf/invoice_template.dart';
 import '../../settings/data/lab_profile_repository.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
@@ -317,20 +319,183 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   Future<void> _exportPdf(Object data) async {
-    if (_type != 'patient_results') {
+    final rows = (data is List)
+        ? data.cast<Map<String, Object?>>()
+        : <Map<String, Object?>>[];
+    if (rows.isEmpty) return;
+
+    final typedInvoice = _invoiceIdCtrl.text.trim().isNotEmpty;
+    if (_type != 'invoices' && typedInvoice) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'PDF export is available for Patient Results only. Use CSV for others.',
+            'To export an invoice PDF, select "Invoices" in the report type dropdown and Apply Filters.',
           ),
         ),
       );
       return;
     }
-    final rows = (data is List)
-        ? data.cast<Map<String, Object?>>()
-        : <Map<String, Object?>>[];
-    if (rows.isEmpty) return;
+
+    if (_type == 'invoices') {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Exporting invoice PDF...')));
+      final invoiceCandidates = <String, Map<String, Object?>>{};
+      for (final r in rows) {
+        final id = r['invoice_id'] as String?;
+        if (id == null || id.isEmpty) continue;
+        invoiceCandidates.putIfAbsent(id, () => r);
+      }
+      if (invoiceCandidates.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No invoice found for export.')),
+        );
+        return;
+      }
+
+      String? selectedInvoiceId;
+      if (invoiceCandidates.length == 1) {
+        selectedInvoiceId = invoiceCandidates.keys.first;
+      } else {
+        selectedInvoiceId = await showDialog<String?>(
+          context: context,
+          builder: (ctx) {
+            final ids = invoiceCandidates.keys.toList();
+            ids.sort((a, b) {
+              final ra = invoiceCandidates[a];
+              final rb = invoiceCandidates[b];
+              final ta = (ra?['issued_at'] as int?) ?? 0;
+              final tb = (rb?['issued_at'] as int?) ?? 0;
+              return tb.compareTo(ta);
+            });
+            return AlertDialog(
+              title: const Text('Select Invoice to Export'),
+              content: SizedBox(
+                width: 520,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: ids.length,
+                  itemBuilder: (ctx, i) {
+                    final id = ids[i];
+                    final r =
+                        invoiceCandidates[id] ?? const <String, Object?>{};
+                    final no = (r['invoice_no'] as String?) ?? id;
+                    final patient = (r['patient_name'] as String?) ?? '';
+                    final issuedAt = r['issued_at'] as int?;
+                    final status = (r['status'] as String?) ?? '';
+                    return ListTile(
+                      title: Text(no),
+                      subtitle: Text(
+                        [
+                          if (patient.isNotEmpty) patient,
+                          if (issuedAt != null && issuedAt != 0)
+                            _fmtDate(issuedAt),
+                          if (status.isNotEmpty) status,
+                        ].join(' · '),
+                      ),
+                      onTap: () => Navigator.of(ctx).pop(id),
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(null),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+
+      if (selectedInvoiceId == null || selectedInvoiceId.isEmpty) return;
+
+      final invoiceId = selectedInvoiceId;
+      final invoicesRepo = ref.read(invoicesRepositoryProvider);
+      final inv = await invoicesRepo.getInvoiceByIdOrNo(invoiceId);
+      if (inv == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Invoice not found.')));
+        return;
+      }
+
+      final resolvedInvoiceId = inv['id'] as String?;
+      if (resolvedInvoiceId == null || resolvedInvoiceId.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Invoice id missing.')));
+        return;
+      }
+
+      final items = await invoicesRepo.listInvoiceItems(resolvedInvoiceId);
+      final labRepo = ref.read(labProfileRepositoryProvider);
+      final lab = await labRepo.getProfile();
+      final logo = await labRepo.loadLogoBytes();
+
+      final pdfData = InvoicePdfData(
+        labName: (lab?['lab_name'] as String?) ?? 'Laboratory',
+        address: (lab?['address'] as String?) ?? '',
+        phone: (lab?['phone'] as String?) ?? '',
+        email: (lab?['email'] as String?) ?? '',
+        logoBytes: logo,
+        invoiceNo: (inv['invoice_no'] as String?) ?? '',
+        status: (inv['status'] as String?) ?? '',
+        issuedAtSec: (inv['issued_at'] as int?) ?? 0,
+        patientName: (inv['patient_name'] as String?) ?? '',
+        orderNumber: inv['order_number'] as String?,
+        referredBy: inv['referred_by'] as String?,
+        items: items
+            .map(
+              (r) => InvoicePdfItem(
+                description:
+                    (r['description'] as String?) ??
+                    (r['test_name'] as String? ?? ''),
+                qty: (r['qty'] as int?) ?? 0,
+                unitPriceCents: (r['unit_price_cents'] as int?) ?? 0,
+                discountCents: (r['discount_cents'] as int?) ?? 0,
+                lineTotalCents: (r['line_total_cents'] as int?) ?? 0,
+                resultText: r['result_text'] as String?,
+                resultNum: r['result_num'] as num?,
+                isAbnormal: ((r['result_abnormal'] as int?) ?? 0) == 1,
+              ),
+            )
+            .toList(growable: false),
+        headerDiscountCents: (inv['discount_cents'] as int?) ?? 0,
+        headerTaxCents: (inv['tax_cents'] as int?) ?? 0,
+        subtotalCents: (inv['subtotal_cents'] as int?) ?? 0,
+        totalCents: (inv['total_cents'] as int?) ?? 0,
+        paidCents: (inv['paid_cents'] as int?) ?? 0,
+        balanceCents: (inv['balance_cents'] as int?) ?? 0,
+      );
+
+      final doc = await buildInvoicePdf(pdfData);
+      await Printing.layoutPdf(onLayout: (_) async => doc);
+      return;
+    }
+
+    if (_type != 'patient_results') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'PDF export is available for Patient Results and Invoices only. Use CSV for others.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Exporting patient results PDF...')),
+    );
+
     // Group by patient
     final byPatient = <String, List<Map<String, Object?>>>{};
     for (final r in rows) {
@@ -461,7 +626,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             DataColumn(label: Text('Abn')),
             DataColumn(label: Text('Validated')),
           ],
-          rows: rows.map((r) {
+          rows: rows.asMap().entries.map((e) {
+            final i = e.key;
+            final r = e.value;
             final value =
                 (r['value_text'] as String?) ??
                 ((r['value_num'] as num?)?.toString() ?? '');
@@ -475,6 +642,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       : '');
             final abn = ((r['is_abnormal'] as int?) ?? 0) == 1 ? 'Y' : '';
             return DataRow(
+              color: MaterialStateProperty.resolveWith((states) {
+                if (states.contains(MaterialState.hovered)) {
+                  return Theme.of(
+                    context,
+                  ).colorScheme.secondary.withOpacity(0.06);
+                }
+                return i.isEven
+                    ? const Color(0x0AFFFFFF)
+                    : const Color(0x06FFFFFF);
+              }),
               cells: [
                 DataCell(Text((r['patient_name'] as String?) ?? '')),
                 DataCell(Text((r['order_number'] as String?) ?? '')),
@@ -505,43 +682,100 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             DataColumn(label: Text('Status')),
             DataColumn(label: Text('Patient')),
             DataColumn(label: Text('Item')),
-            DataColumn(label: Text('Qty')),
-            DataColumn(label: Text('Unit (¢)')),
-            DataColumn(label: Text('Item Disc (¢)')),
-            DataColumn(label: Text('Line Total (¢)')),
-            DataColumn(label: Text('Hdr Disc (¢)')),
-            DataColumn(label: Text('Hdr Tax (¢)')),
-            DataColumn(label: Text('Paid')),
-            DataColumn(label: Text('Total')),
-            DataColumn(label: Text('Balance')),
+            DataColumn(label: Text('Qty'), numeric: true),
+            DataColumn(label: Text('Unit (¢)'), numeric: true),
+            DataColumn(label: Text('Item Disc (¢)'), numeric: true),
+            DataColumn(label: Text('Line Total (¢)'), numeric: true),
+            DataColumn(label: Text('Hdr Disc (¢)'), numeric: true),
+            DataColumn(label: Text('Hdr Tax (¢)'), numeric: true),
+            DataColumn(label: Text('Paid'), numeric: true),
+            DataColumn(label: Text('Total'), numeric: true),
+            DataColumn(label: Text('Balance'), numeric: true),
           ],
-          rows: rows.map((r) {
+          rows: rows.asMap().entries.map((e) {
+            final i = e.key;
+            final r = e.value;
             return DataRow(
+              color: MaterialStateProperty.resolveWith((states) {
+                if (states.contains(MaterialState.hovered)) {
+                  return Theme.of(
+                    context,
+                  ).colorScheme.secondary.withOpacity(0.06);
+                }
+                return i.isEven
+                    ? const Color(0x0AFFFFFF)
+                    : const Color(0x06FFFFFF);
+              }),
               cells: [
                 DataCell(Text((r['invoice_no'] as String?) ?? '')),
                 DataCell(Text(_fmtDate(r['issued_at'] as int?))),
                 DataCell(Text((r['status'] as String?) ?? '')),
                 DataCell(Text((r['patient_name'] as String?) ?? '')),
                 DataCell(Text((r['description'] as String?) ?? '')),
-                DataCell(Text(((r['qty'] as int?) ?? 0).toString())),
                 DataCell(
-                  Text(((r['unit_price_cents'] as int?) ?? 0).toString()),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(((r['qty'] as int?) ?? 0).toString()),
+                  ),
                 ),
                 DataCell(
-                  Text(((r['item_discount_cents'] as int?) ?? 0).toString()),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      ((r['unit_price_cents'] as int?) ?? 0).toString(),
+                    ),
+                  ),
                 ),
                 DataCell(
-                  Text(((r['line_total_cents'] as int?) ?? 0).toString()),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      ((r['item_discount_cents'] as int?) ?? 0).toString(),
+                    ),
+                  ),
                 ),
                 DataCell(
-                  Text(((r['header_discount_cents'] as int?) ?? 0).toString()),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      ((r['line_total_cents'] as int?) ?? 0).toString(),
+                    ),
+                  ),
                 ),
                 DataCell(
-                  Text(((r['header_tax_cents'] as int?) ?? 0).toString()),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      ((r['header_discount_cents'] as int?) ?? 0).toString(),
+                    ),
+                  ),
                 ),
-                DataCell(Text(_fmtMoney(r['paid_cents'] as int?))),
-                DataCell(Text(_fmtMoney(r['total_cents'] as int?))),
-                DataCell(Text(_fmtMoney(r['balance_cents'] as int?))),
+                DataCell(
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      ((r['header_tax_cents'] as int?) ?? 0).toString(),
+                    ),
+                  ),
+                ),
+                DataCell(
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(_fmtMoney(r['paid_cents'] as int?)),
+                  ),
+                ),
+                DataCell(
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(_fmtMoney(r['total_cents'] as int?)),
+                  ),
+                ),
+                DataCell(
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(_fmtMoney(r['balance_cents'] as int?)),
+                  ),
+                ),
               ],
             );
           }).toList(),

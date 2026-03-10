@@ -52,10 +52,15 @@ class _TestsListScreenState extends ConsumerState<TestsListScreen> {
   }
 
   Future<void> _openForm({String? id}) async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => TestFormScreen(testId: id)),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => TestFormScreen(testId: id)));
     if (result == true) {
+      setState(() {
+        _query = '';
+        _searchCtrl.clear();
+        _page = 1;
+      });
       _refresh();
     }
   }
@@ -136,58 +141,101 @@ class _TestsListScreenState extends ConsumerState<TestsListScreen> {
                                 DataColumn(label: Text('Actions')),
                               ],
                               rows: tests.map((t) {
-                                return DataRow(cells: [
-                                  DataCell(Text(t.testCode)),
-                                  DataCell(Text(t.testName)),
-                                  DataCell(Text(t.category ?? '')),
-                                  DataCell(Text(t.sampleType)),
-                                  DataCell(Text(t.unit ?? '')),
-                                  DataCell(Text(_formatRange(t.normalRangeMin, t.normalRangeMax))),
-                                  DataCell(Text(_formatPrice(t.priceCents))),
-                                  DataCell(Text(t.isActive ? 'Active' : 'Inactive')),
-                                  DataCell(Row(
-                                    children: [
-                                      IconButton(
-                                        tooltip: 'Edit',
-                                        icon: const Icon(Icons.edit),
-                                        onPressed: () => _openForm(id: t.id),
+                                return DataRow(
+                                  cells: [
+                                    DataCell(Text(t.testCode)),
+                                    DataCell(Text(t.testName)),
+                                    DataCell(Text(t.category ?? '')),
+                                    DataCell(Text(t.sampleType)),
+                                    DataCell(Text(t.unit ?? '')),
+                                    DataCell(
+                                      Text(
+                                        _formatRange(
+                                          t.normalRangeMin,
+                                          t.normalRangeMax,
+                                        ),
                                       ),
-                                      const SizedBox(width: 4),
-                                      IconButton(
-                                        tooltip: 'Soft Delete',
-                                        icon: const Icon(Icons.delete_outline),
-                                        onPressed: () async {
-                                          final confirm = await showDialog<bool>(
-                                            context: context,
-                                            builder: (ctx) => AlertDialog(
-                                              title: const Text('Delete Test'),
-                                              content: const Text('Soft delete this test? It will be hidden but not removed.'),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () => Navigator.pop(ctx, false),
-                                                  child: const Text('Cancel'),
-                                                ),
-                                                FilledButton(
-                                                  onPressed: () => Navigator.pop(ctx, true),
-                                                  child: const Text('Delete'),
-                                                ),
-                                              ],
+                                    ),
+                                    DataCell(Text(_formatPrice(t.priceCents))),
+                                    DataCell(
+                                      Text(t.isActive ? 'Active' : 'Inactive'),
+                                    ),
+                                    DataCell(
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            tooltip: 'Edit',
+                                            icon: const Icon(Icons.edit),
+                                            onPressed: () =>
+                                                _openForm(id: t.id),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          IconButton(
+                                            tooltip: 'Soft Delete',
+                                            icon: const Icon(
+                                              Icons.delete_outline,
                                             ),
-                                          );
-                                          if (confirm == true && t.id != null) {
-                                            await ref.read(testsRepositoryProvider).softDeleteTest(t.id!);
-                                            _refresh();
-                                            if (mounted) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('Test deleted')),
+                                            onPressed: () async {
+                                              final confirm = await showDialog<bool>(
+                                                context: context,
+                                                builder: (ctx) => AlertDialog(
+                                                  title: const Text(
+                                                    'Delete Test',
+                                                  ),
+                                                  content: const Text(
+                                                    'Soft delete this test? It will be hidden but not removed.',
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            ctx,
+                                                            false,
+                                                          ),
+                                                      child: const Text(
+                                                        'Cancel',
+                                                      ),
+                                                    ),
+                                                    FilledButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            ctx,
+                                                            true,
+                                                          ),
+                                                      child: const Text(
+                                                        'Delete',
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
                                               );
-                                            }
-                                          }
-                                        },
+                                              if (confirm == true &&
+                                                  t.id != null) {
+                                                await ref
+                                                    .read(
+                                                      testsRepositoryProvider,
+                                                    )
+                                                    .softDeleteTest(t.id!);
+                                                _refresh();
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Test deleted',
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                  )),
-                                ]);
+                                    ),
+                                  ],
+                                );
                               }).toList(),
                             ),
                           ),

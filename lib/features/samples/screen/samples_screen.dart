@@ -70,6 +70,7 @@ class _SamplesScreenState extends ConsumerState<SamplesScreen>
           );
     }
     ref.invalidate(samplesQueueProvider(status));
+    ref.invalidate(samplesQueueProvider(next));
   }
 
   @override
@@ -174,19 +175,39 @@ class _SamplesScreenState extends ConsumerState<SamplesScreen>
                                                     Icons.play_arrow,
                                                   ),
                                                   onPressed: () async {
-                                                    await ref
-                                                        .read(
-                                                          samplesRepositoryProvider,
-                                                        )
-                                                        .updateSampleStatus(
-                                                          sid,
+                                                    try {
+                                                      await ref
+                                                          .read(
+                                                            samplesRepositoryProvider,
+                                                          )
+                                                          .updateSampleStatus(
+                                                            sid,
+                                                            nextS,
+                                                          );
+                                                      ref.invalidate(
+                                                        samplesQueueProvider(
+                                                          status,
+                                                        ),
+                                                      );
+                                                      ref.invalidate(
+                                                        samplesQueueProvider(
                                                           nextS,
-                                                        );
-                                                    ref.invalidate(
-                                                      samplesQueueProvider(
-                                                        status,
-                                                      ),
-                                                    );
+                                                        ),
+                                                      );
+                                                    } catch (e) {
+                                                      if (!context.mounted) {
+                                                        return;
+                                                      }
+                                                      ScaffoldMessenger.of(
+                                                        context,
+                                                      ).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(
+                                                            'Failed: $e',
+                                                          ),
+                                                        ),
+                                                      );
+                                                    }
                                                   },
                                                 ),
                                             ],

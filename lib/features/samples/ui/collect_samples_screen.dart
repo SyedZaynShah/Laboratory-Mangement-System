@@ -194,11 +194,40 @@ class _CollectSamplesScreenState extends ConsumerState<CollectSamplesScreen> {
                                         DropdownButton<String>(
                                           value: status,
                                           items: _statusItems,
-                                          onChanged: (v) {
-                                            if (v != null) {
-                                              _setStatus(sid, v);
-                                            }
-                                          },
+                                          onChanged: (status == 'processed')
+                                              ? null
+                                              : (v) {
+                                                  if (v == null) return;
+                                                  const seq = [
+                                                    'awaiting',
+                                                    'collected',
+                                                    'received',
+                                                    'processed',
+                                                  ];
+                                                  final curIdx = seq.indexOf(
+                                                    status,
+                                                  );
+                                                  final next =
+                                                      (curIdx >= 0 &&
+                                                          curIdx <
+                                                              seq.length - 1)
+                                                      ? seq[curIdx + 1]
+                                                      : null;
+                                                  if (v == status ||
+                                                      v == next) {
+                                                    _setStatus(sid, v);
+                                                  } else {
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text(
+                                                          'Follow sequence: awaiting → collected → received → processed',
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                },
                                         ),
                                       ),
                                       DataCell(Text(_formatTs(collectedAt))),
@@ -241,24 +270,32 @@ class _CollectSamplesScreenState extends ConsumerState<CollectSamplesScreen> {
                                                   ? 'Enter Results'
                                                   : 'Edit Results',
                                               icon: const Icon(Icons.edit_note),
-                                              onPressed: () async {
-                                                await _openResultDialog(
-                                                  itemId: itemId,
-                                                  testName: testName,
-                                                  sampleCode: sampleCode,
-                                                  existing: res,
-                                                );
-                                                ref.invalidate(
-                                                  testResultsByOrderProvider(
-                                                    widget.orderId,
-                                                  ),
-                                                );
-                                                ref.invalidate(
-                                                  samplesPageProvider(
-                                                    widget.orderId,
-                                                  ),
-                                                );
-                                              },
+                                              onPressed:
+                                                  ((status == 'received' ||
+                                                          status ==
+                                                              'collected' ||
+                                                          status ==
+                                                              'processed') &&
+                                                      validatedAt == null)
+                                                  ? () async {
+                                                      await _openResultDialog(
+                                                        itemId: itemId,
+                                                        testName: testName,
+                                                        sampleCode: sampleCode,
+                                                        existing: res,
+                                                      );
+                                                      ref.invalidate(
+                                                        testResultsByOrderProvider(
+                                                          widget.orderId,
+                                                        ),
+                                                      );
+                                                      ref.invalidate(
+                                                        samplesPageProvider(
+                                                          widget.orderId,
+                                                        ),
+                                                      );
+                                                    }
+                                                  : null,
                                             ),
                                             const SizedBox(width: 4),
                                             IconButton(
@@ -287,26 +324,53 @@ class _CollectSamplesScreenState extends ConsumerState<CollectSamplesScreen> {
                                                         }
                                                         return;
                                                       }
-                                                      await ref
-                                                          .read(
-                                                            testResultsRepositoryProvider,
-                                                          )
-                                                          .validateResult(
-                                                            testResultId:
-                                                                resultId,
-                                                            validatorUserId:
-                                                                uid,
+                                                      try {
+                                                        await ref
+                                                            .read(
+                                                              testResultsRepositoryProvider,
+                                                            )
+                                                            .validateResult(
+                                                              testResultId:
+                                                                  resultId,
+                                                              validatorUserId:
+                                                                  uid,
+                                                            );
+                                                        ref.invalidate(
+                                                          testResultsByOrderProvider(
+                                                            widget.orderId,
+                                                          ),
+                                                        );
+                                                        ref.invalidate(
+                                                          samplesPageProvider(
+                                                            widget.orderId,
+                                                          ),
+                                                        );
+                                                        if (mounted) {
+                                                          ScaffoldMessenger.of(
+                                                            context,
+                                                          ).showSnackBar(
+                                                            const SnackBar(
+                                                              content: Text(
+                                                                'Result validated',
+                                                              ),
+                                                            ),
                                                           );
-                                                      ref.invalidate(
-                                                        testResultsByOrderProvider(
-                                                          widget.orderId,
-                                                        ),
-                                                      );
-                                                      ref.invalidate(
-                                                        samplesPageProvider(
-                                                          widget.orderId,
-                                                        ),
-                                                      );
+                                                        }
+                                                      } catch (e) {
+                                                        if (mounted) {
+                                                          ScaffoldMessenger.of(
+                                                            context,
+                                                          ).showSnackBar(
+                                                            SnackBar(
+                                                              content: Text(
+                                                                e is StateError
+                                                                    ? e.message
+                                                                    : 'Failed to validate. Please try again.',
+                                                              ),
+                                                            ),
+                                                          );
+                                                        }
+                                                      }
                                                     }
                                                   : null,
                                             ),

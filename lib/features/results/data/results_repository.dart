@@ -1,4 +1,5 @@
 import 'package:riverpod/riverpod.dart';
+import 'package:sqlite3/sqlite3.dart' as sq3;
 import '../../../core/database/base_repository.dart';
 
 class ResultsRepository extends BaseRepository {
@@ -45,12 +46,13 @@ class ResultsRepository extends BaseRepository {
     );
     if (orderRow.isEmpty) return;
     final orderId = orderRow.first['order_id'] as String;
+
+    // Sample status counts
     final statusCounts = d
         .select(
           '''
       SELECT
         SUM(CASE WHEN s.status = 'processed' THEN 1 ELSE 0 END) AS processed,
-        SUM(CASE WHEN s.status IN ('received','processed') THEN 1 ELSE 0 END) AS inproc,
         SUM(CASE WHEN s.status IN ('collected','received','processed') THEN 1 ELSE 0 END) AS collected,
         COUNT(1) AS total
       FROM test_order_items i
@@ -61,13 +63,27 @@ class ResultsRepository extends BaseRepository {
         )
         .first;
     final processed = (statusCounts['processed'] as int?) ?? 0;
-    final inproc = (statusCounts['inproc'] as int?) ?? 0;
     final collected = (statusCounts['collected'] as int?) ?? 0;
     final total = (statusCounts['total'] as int?) ?? 0;
+
+    // Validated results count
+    final resultsRows = d.select(
+      '''
+      SELECT COUNT(1) AS results_total
+      FROM test_order_items i
+      JOIN test_results r ON r.test_order_item_id = i.id AND r.deleted_at IS NULL
+      WHERE i.order_id = ? AND r.validated_at IS NOT NULL
+    ''',
+      [orderId],
+    );
+    final resultsTotal = resultsRows.isEmpty
+        ? 0
+        : ((resultsRows.first['results_total'] as int?) ?? 0);
+
     String newStatus = 'ordered';
-    if (total > 0 && processed == total) {
+    if (total > 0 && processed == total && resultsTotal == total) {
       newStatus = 'completed';
-    } else if (inproc > 0) {
+    } else if (processed > 0) {
       newStatus = 'in_process';
     } else if (total > 0 && collected == total) {
       newStatus = 'sample_collected';
@@ -137,6 +153,7 @@ class ResultsRepository extends BaseRepository {
             refHigh,
             refText,
             abnormal,
+            remarks,
             ts,
             ts,
           ]);
@@ -208,6 +225,9 @@ class ResultsRepository extends BaseRepository {
 
       await _recomputeOrderStatusForItem(d, itemId, ts);
       d.execute('COMMIT');
+    } on sq3.SqliteException catch (e) {
+      d.execute('ROLLBACK');
+      throw StateError(e.message);
     } catch (e) {
       d.execute('ROLLBACK');
       rethrow;
@@ -220,6 +240,7 @@ class ResultsRepository extends BaseRepository {
   }) async {
     final d = await db;
     final ts = nowSec();
+
     d.execute('BEGIN');
     try {
       final row = d.select(
@@ -235,7 +256,7 @@ class ResultsRepository extends BaseRepository {
         'UPDATE test_results SET validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ?',
       );
       try {
-        upd.execute([validatorUserId, ts, ts, testResultId]);
+        upd.execute([null, ts, ts, testResultId]);
       } finally {
         upd.dispose();
       }
@@ -252,6 +273,9 @@ class ResultsRepository extends BaseRepository {
 
       await _recomputeOrderStatusForItem(d, itemId, ts);
       d.execute('COMMIT');
+    } on sq3.SqliteException catch (e) {
+      d.execute('ROLLBACK');
+      throw StateError(e.message);
     } catch (e) {
       d.execute('ROLLBACK');
       rethrow;

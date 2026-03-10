@@ -8,12 +8,12 @@ final testOrdersRepositoryProvider = Provider<TestOrdersRepository>((ref) {
 
 final testOrdersPageProvider = FutureProvider.autoDispose
     .family<List<TestOrder>, int>((ref, page) async {
-  final repo = ref.read(testOrdersRepositoryProvider);
-  return repo.listOrders(page: page);
-});
+      final repo = ref.read(testOrdersRepositoryProvider);
+      return repo.listOrders(page: page);
+    });
 
 final testOrderByIdProvider = FutureProvider.autoDispose
     .family<TestOrder?, String>((ref, id) async {
-  final repo = ref.read(testOrdersRepositoryProvider);
-  return repo.getOrderById(id);
-});
+      final repo = ref.read(testOrdersRepositoryProvider);
+      return repo.getOrderById(id);
+    });

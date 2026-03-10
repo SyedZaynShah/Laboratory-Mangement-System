@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart' as sq3;
 
 class DatabaseMigrationService {
-  static const int latestVersion = 7;
+  static const int latestVersion = 11;
 
   final sq3.Database db;
   DatabaseMigrationService(this.db);
@@ -71,6 +71,259 @@ class DatabaseMigrationService {
       if (kDebugMode) {
         debugPrint('[DB] Migrated to schema version 7');
       }
+    }
+    if (currentVersion < 8) {
+      _migrateToV8();
+      _setUserVersion(8);
+      _recordSchemaMigration(8);
+      if (kDebugMode) {
+        debugPrint('[DB] Migrated to schema version 8');
+      }
+    }
+    if (currentVersion < 9) {
+      _migrateToV9();
+      _setUserVersion(9);
+      _recordSchemaMigration(9);
+      if (kDebugMode) {
+        debugPrint('[DB] Migrated to schema version 9');
+      }
+    }
+    if (currentVersion < 10) {
+      _migrateToV10();
+      _setUserVersion(10);
+      _recordSchemaMigration(10);
+      if (kDebugMode) {
+        debugPrint('[DB] Migrated to schema version 10');
+      }
+    }
+    if (currentVersion < 11) {
+      _migrateToV11();
+      _setUserVersion(11);
+      _recordSchemaMigration(11);
+      if (kDebugMode) {
+        debugPrint('[DB] Migrated to schema version 11');
+      }
+    }
+  }
+
+  void _migrateToV10() {
+    // Widen invoices.status CHECK to allow 'unpaid' and 'partially_paid'
+    db.execute('PRAGMA foreign_keys = OFF;');
+    db.execute('BEGIN;');
+    try {
+      final invTable = db.select(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='invoices' LIMIT 1;",
+      );
+      final invOldTable = db.select(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='invoices_old_v9' LIMIT 1;",
+      );
+
+      if (invTable.isEmpty && invOldTable.isEmpty) {
+        db.execute('COMMIT;');
+        db.execute('PRAGMA foreign_keys = ON;');
+        return;
+      }
+
+      // If a previous migration attempt renamed invoices but failed mid-way,
+      // we may already have invoices_old_v9 present.
+      final sourceTable = invOldTable.isNotEmpty
+          ? 'invoices_old_v9'
+          : 'invoices';
+
+      // Drop indexes that might already exist with these names (they may belong
+      // to the old invoices table and would block recreation).
+      db.execute('DROP INDEX IF EXISTS idx_invoices_patient;');
+      db.execute('DROP INDEX IF EXISTS idx_invoices_issued;');
+      db.execute('DROP INDEX IF EXISTS idx_invoices_status;');
+
+      // If we are migrating from the live invoices table, rename it. Otherwise
+      // keep using the already-renamed source.
+      if (sourceTable == 'invoices') {
+        db.execute('ALTER TABLE invoices RENAME TO invoices_old_v9;');
+      }
+
+      // In case a failed attempt already created the new invoices table, drop
+      // it so we can recreate cleanly.
+      db.execute('DROP TABLE IF EXISTS invoices;');
+      db.execute('''
+        CREATE TABLE invoices (
+          id TEXT PRIMARY KEY,
+          invoice_no TEXT NOT NULL UNIQUE,
+          patient_id TEXT NOT NULL REFERENCES patients(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+          issued_at INTEGER NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('draft','unpaid','partially_paid','paid','void')),
+          subtotal_cents INTEGER NOT NULL DEFAULT 0,
+          discount_cents INTEGER NOT NULL DEFAULT 0,
+          tax_cents INTEGER NOT NULL DEFAULT 0,
+          total_cents INTEGER NOT NULL DEFAULT 0,
+          paid_cents INTEGER NOT NULL DEFAULT 0,
+          balance_cents INTEGER NOT NULL DEFAULT 0,
+          created_by TEXT REFERENCES users(id),
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        );
+      ''');
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_invoices_patient ON invoices(patient_id);',
+      );
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_invoices_issued ON invoices(issued_at);',
+      );
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);',
+      );
+
+      // Copy rows and map legacy 'open' to 'unpaid'/'partially_paid'
+      db.execute('''
+        INSERT INTO invoices(
+          id, invoice_no, patient_id, issued_at, status,
+          subtotal_cents, discount_cents, tax_cents, total_cents,
+          paid_cents, balance_cents, created_by, created_at, updated_at, deleted_at
+        )
+        SELECT
+          id, invoice_no, patient_id, issued_at,
+          CASE
+            WHEN status = 'paid' THEN 'paid'
+            WHEN status = 'void' THEN 'void'
+            WHEN status = 'draft' THEN 'draft'
+            ELSE
+              CASE
+                WHEN COALESCE(paid_cents,0) <= 0 THEN 'unpaid'
+                WHEN COALESCE(balance_cents,0) <= 0 THEN 'paid'
+                ELSE 'partially_paid'
+              END
+          END AS status,
+          subtotal_cents, discount_cents, tax_cents, total_cents,
+          paid_cents, balance_cents, created_by, created_at, updated_at, deleted_at
+        FROM $sourceTable;
+      ''');
+
+      db.execute('DROP TABLE IF EXISTS invoices_old_v9;');
+
+      db.execute('COMMIT;');
+      db.execute('PRAGMA foreign_keys = ON;');
+    } catch (e) {
+      db.execute('ROLLBACK;');
+      db.execute('PRAGMA foreign_keys = ON;');
+      rethrow;
+    }
+  }
+
+  void _migrateToV11() {
+    db.execute('PRAGMA foreign_keys = OFF;');
+    db.execute('BEGIN;');
+    try {
+      final invRows = db.select(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='invoices' LIMIT 1;",
+      );
+      if (invRows.isEmpty) {
+        db.execute('COMMIT;');
+        db.execute('PRAGMA foreign_keys = ON;');
+        return;
+      }
+
+      final invoiceItemsSqlRows = db.select(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='invoice_items' LIMIT 1;",
+      );
+      final invoiceItemsSql = invoiceItemsSqlRows.isEmpty
+          ? ''
+          : (invoiceItemsSqlRows.first['sql'] as String? ?? '');
+      final invoiceItemsNeedsRepair = invoiceItemsSql.contains(
+        'invoices_old_v9',
+      );
+
+      if (invoiceItemsNeedsRepair) {
+        db.execute(
+          'ALTER TABLE invoice_items RENAME TO invoice_items_old_v11;',
+        );
+        db.execute('''
+          CREATE TABLE invoice_items (
+            id TEXT PRIMARY KEY,
+            invoice_id TEXT NOT NULL REFERENCES invoices(id) ON UPDATE CASCADE ON DELETE CASCADE,
+            test_order_item_id TEXT NOT NULL REFERENCES test_order_items(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            test_id TEXT NOT NULL REFERENCES tests_master(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            description TEXT,
+            qty INTEGER NOT NULL DEFAULT 1 CHECK(qty > 0),
+            unit_price_cents INTEGER NOT NULL,
+            discount_cents INTEGER NOT NULL DEFAULT 0,
+            line_total_cents INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        db.execute(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_invoice_item ON invoice_items(invoice_id, test_order_item_id);',
+        );
+        db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);',
+        );
+        db.execute('''
+          INSERT INTO invoice_items(
+            id, invoice_id, test_order_item_id, test_id, description,
+            qty, unit_price_cents, discount_cents, line_total_cents,
+            created_at, updated_at, deleted_at
+          )
+          SELECT
+            id, invoice_id, test_order_item_id, test_id, description,
+            qty, unit_price_cents, discount_cents, line_total_cents,
+            created_at, updated_at, deleted_at
+          FROM invoice_items_old_v11;
+        ''');
+        db.execute('DROP TABLE invoice_items_old_v11;');
+      }
+
+      final paymentsSqlRows = db.select(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='payments' LIMIT 1;",
+      );
+      final paymentsSql = paymentsSqlRows.isEmpty
+          ? ''
+          : (paymentsSqlRows.first['sql'] as String? ?? '');
+      final paymentsNeedsRepair = paymentsSql.contains('invoices_old_v9');
+
+      if (paymentsNeedsRepair) {
+        db.execute('ALTER TABLE payments RENAME TO payments_old_v11;');
+        db.execute('''
+          CREATE TABLE payments (
+            id TEXT PRIMARY KEY,
+            invoice_id TEXT NOT NULL REFERENCES invoices(id) ON UPDATE CASCADE ON DELETE CASCADE,
+            amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+            method TEXT NOT NULL CHECK(method IN ('cash','card','bank','other')),
+            reference TEXT,
+            received_at INTEGER NOT NULL,
+            received_by TEXT REFERENCES users(id),
+            notes TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments(invoice_id);',
+        );
+        db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_payments_received_at ON payments(received_at);',
+        );
+        db.execute('''
+          INSERT INTO payments(
+            id, invoice_id, amount_cents, method, reference,
+            received_at, received_by, notes, created_at, updated_at, deleted_at
+          )
+          SELECT
+            id, invoice_id, amount_cents, method, reference,
+            received_at, received_by, notes, created_at, updated_at, deleted_at
+          FROM payments_old_v11;
+        ''');
+        db.execute('DROP TABLE payments_old_v11;');
+      }
+
+      db.execute('COMMIT;');
+      db.execute('PRAGMA foreign_keys = ON;');
+    } catch (e) {
+      db.execute('ROLLBACK;');
+      db.execute('PRAGMA foreign_keys = ON;');
+      rethrow;
     }
   }
 
@@ -693,6 +946,65 @@ class DatabaseMigrationService {
           ['lab', 'Your Lab Name', '', '', '', null, ts],
         );
       }
+      db.execute('COMMIT;');
+    } catch (e) {
+      db.execute('ROLLBACK;');
+      rethrow;
+    }
+  }
+
+  void _migrateToV8() {
+    db.execute('BEGIN;');
+    try {
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS expenses (
+          id TEXT PRIMARY KEY,
+          category TEXT NOT NULL,
+          amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+          occurred_at INTEGER NOT NULL,
+          notes TEXT,
+          created_by TEXT REFERENCES users(id),
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        );
+      ''');
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_expenses_occurred_at ON expenses(occurred_at);',
+      );
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category);',
+      );
+      db.execute('COMMIT;');
+    } catch (e) {
+      db.execute('ROLLBACK;');
+      rethrow;
+    }
+  }
+
+  void _migrateToV9() {
+    db.execute('BEGIN;');
+    try {
+      // Finance: expenses table for installations that already reached v8
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS expenses (
+          id TEXT PRIMARY KEY,
+          category TEXT NOT NULL,
+          amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+          occurred_at INTEGER NOT NULL,
+          notes TEXT,
+          created_by TEXT REFERENCES users(id),
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER
+        );
+      ''');
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_expenses_occurred_at ON expenses(occurred_at);',
+      );
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category);',
+      );
       db.execute('COMMIT;');
     } catch (e) {
       db.execute('ROLLBACK;');

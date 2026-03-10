@@ -25,6 +25,22 @@ class InvoicesRepository extends BaseRepository {
     return 'INV-$year-${next.toString().padLeft(5, '0')}';
   }
 
+  Future<String?> getInvoiceIdForOrder(String orderId) async {
+    final d = await db;
+    final rows = d.select(
+      '''
+      SELECT ii.invoice_id
+      FROM invoice_items ii
+      JOIN test_order_items i ON i.id = ii.test_order_item_id
+      WHERE i.order_id = ?
+      LIMIT 1
+    ''',
+      [orderId],
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['invoice_id'] as String?;
+  }
+
   Future<String> createInvoice(String orderId) async {
     final d = await db;
     final ts = nowSec();
@@ -55,6 +71,23 @@ class InvoicesRepository extends BaseRepository {
     }
     final patientId = ordRows.first['patient_id'] as String;
 
+    final pRows = d.select('SELECT 1 FROM patients WHERE id = ? LIMIT 1', [
+      patientId,
+    ]);
+    if (pRows.isEmpty) {
+      throw StateError('Patient not found');
+    }
+
+    if (uid != null) {
+      final uRows = d.select(
+        'SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1',
+        [uid],
+      );
+      if (uRows.isEmpty) {
+        throw StateError('User not found');
+      }
+    }
+
     // Snapshot items
     final items = d.select(
       '''
@@ -81,7 +114,7 @@ class InvoicesRepository extends BaseRepository {
           id, invoice_no, patient_id, issued_at, status,
           subtotal_cents, discount_cents, tax_cents, total_cents,
           paid_cents, balance_cents, created_by, created_at, updated_at
-        ) VALUES (?,?,?,?, 'open', 0,0,0,0, 0,0, ?, ?, ?)
+        ) VALUES (?,?,?,?, 'unpaid', 0,0,0,0, 0,0, ?, ?, ?)
       ''');
       try {
         insInv.execute([invoiceId, invoiceNo, patientId, ts, uid, ts, ts]);
@@ -147,18 +180,31 @@ class InvoicesRepository extends BaseRepository {
         .first;
 
     final subtotal = (totals['subtotal'] as int?) ?? 0;
-    final hdrDiscount = (totals['hdr_discount'] as int?) ?? 0;
-    final hdrTax = (totals['hdr_tax'] as int?) ?? 0;
-    final total = subtotal - hdrDiscount + hdrTax;
+    var hdrDiscount = (totals['hdr_discount'] as int?) ?? 0;
+    var hdrTax = (totals['hdr_tax'] as int?) ?? 0;
+    if (hdrDiscount < 0) hdrDiscount = 0;
+    if (hdrDiscount > subtotal) hdrDiscount = subtotal;
+    if (hdrTax < 0) hdrTax = 0;
+    final net = subtotal - hdrDiscount;
+    final total = net + hdrTax;
     final paid = (totals['paid'] as int?) ?? 0;
     var balance = total - paid;
     if (balance < 0) balance = 0;
-    String status = 'open';
+    String status = 'unpaid';
     if (total == 0) {
       status = 'draft';
+    } else if (paid <= 0) {
+      status = 'unpaid';
     } else if (balance == 0) {
       status = 'paid';
+    } else {
+      status = 'partially_paid';
     }
+    // Debug log for calculation integrity
+    // ignore: avoid_print
+    print(
+      '[InvoiceTotals] id=$invoiceId subtotal=$subtotal discount=$hdrDiscount tax=$hdrTax net=$net total=$total paid=$paid balance=$balance',
+    );
     final upd = d.prepare('''
       UPDATE invoices
       SET subtotal_cents = ?, total_cents = ?, paid_cents = ?, balance_cents = ?, status = ?, updated_at = ?
@@ -274,10 +320,14 @@ class InvoicesRepository extends BaseRepository {
       final curQty = (row.first['qty'] as int?) ?? 1;
       final curUnit = (row.first['unit_price_cents'] as int?) ?? 0;
       final curDisc = (row.first['discount_cents'] as int?) ?? 0;
-      final newQty = qty ?? curQty;
-      final newUnit = unitPriceCents ?? curUnit;
-      final newDisc = discountCents ?? curDisc;
-      final lineTotal = (newQty * newUnit) - newDisc;
+      final newQty = (qty ?? curQty).clamp(0, 1 << 31);
+      final newUnit = (unitPriceCents ?? curUnit).clamp(0, 1 << 31);
+      var newDisc = (discountCents ?? curDisc);
+      final maxDisc = (newQty * newUnit);
+      if (newDisc < 0) newDisc = 0;
+      if (newDisc > maxDisc) newDisc = maxDisc;
+      var lineTotal = (newQty * newUnit) - newDisc;
+      if (lineTotal < 0) lineTotal = 0;
 
       final upd = d.prepare('''
         UPDATE invoice_items
@@ -289,6 +339,12 @@ class InvoicesRepository extends BaseRepository {
       } finally {
         upd.dispose();
       }
+
+      // Debug log for item update
+      // ignore: avoid_print
+      print(
+        '[InvoiceItem] id=$invoiceItemId inv=$invoiceId qty=$newQty unit=$newUnit disc=$newDisc line_total=$lineTotal',
+      );
 
       _recomputeTotals(d, invoiceId, ts);
       d.execute('COMMIT');
@@ -352,7 +408,17 @@ class InvoicesRepository extends BaseRepository {
     final d = await db;
     final rows = d.select(
       '''
-      SELECT i.*, p.full_name AS patient_name
+      SELECT i.*,
+             p.full_name AS patient_name,
+             p.referred_by AS referred_by,
+             (
+               SELECT o.order_number
+               FROM invoice_items ii
+               JOIN test_order_items toi ON toi.id = ii.test_order_item_id
+               JOIN test_orders o ON o.id = toi.order_id
+               WHERE ii.invoice_id = i.id
+               LIMIT 1
+             ) AS order_number
       FROM invoices i
       JOIN patients p ON p.id = i.patient_id
       WHERE i.id = ?
@@ -364,13 +430,45 @@ class InvoicesRepository extends BaseRepository {
     return Map<String, Object?>.from(rows.first);
   }
 
+  Future<Map<String, Object?>?> getInvoiceByIdOrNo(String idOrNo) async {
+    final d = await db;
+    final rows = d.select(
+      '''
+      SELECT i.*,
+             p.full_name AS patient_name,
+             p.referred_by AS referred_by,
+             (
+               SELECT o.order_number
+               FROM invoice_items ii
+               JOIN test_order_items toi ON toi.id = ii.test_order_item_id
+               JOIN test_orders o ON o.id = toi.order_id
+               WHERE ii.invoice_id = i.id
+               LIMIT 1
+             ) AS order_number
+      FROM invoices i
+      JOIN patients p ON p.id = i.patient_id
+      WHERE i.id = ? OR i.invoice_no = ?
+      LIMIT 1
+    ''',
+      [idOrNo, idOrNo],
+    );
+    if (rows.isEmpty) return null;
+    return Map<String, Object?>.from(rows.first);
+  }
+
   Future<List<Map<String, Object?>>> listInvoiceItems(String invoiceId) async {
     final d = await db;
     final rows = d.select(
       '''
-      SELECT ii.*, t.name AS test_name
+      SELECT ii.*, t.name AS test_name,
+             r.value_text AS result_text,
+             r.value_num AS result_num,
+             r.is_abnormal AS result_abnormal
       FROM invoice_items ii
       JOIN tests_master t ON t.id = ii.test_id
+      LEFT JOIN test_results r
+        ON r.test_order_item_id = ii.test_order_item_id
+       AND r.deleted_at IS NULL
       WHERE ii.invoice_id = ? AND ii.deleted_at IS NULL
       ORDER BY t.name
     ''',

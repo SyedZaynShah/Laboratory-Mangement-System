@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../core/widgets/glass_surface.dart';
+import '../../../core/widgets/status_pill.dart';
+import '../../../core/widgets/gradient_text.dart';
 import '../data/invoices_providers.dart';
 import 'invoice_detail_screen.dart';
 
@@ -15,8 +18,11 @@ class _InvoicesListScreenState extends ConsumerState<InvoicesListScreen> {
   int _page = 1;
   static const int _pageSize = 20;
 
-  String _formatMoney(int cents) => NumberFormat('###,##0.00').format(cents / 100.0);
-  String _formatDate(int ts) => DateFormat('yyyy-MM-dd HH:mm').format(DateTime.fromMillisecondsSinceEpoch(ts * 1000));
+  String _formatMoney(int cents) =>
+      NumberFormat('###,##0.00').format(cents / 100.0);
+  String _formatDate(int ts) => DateFormat(
+    'yyyy-MM-dd HH:mm',
+  ).format(DateTime.fromMillisecondsSinceEpoch(ts * 1000));
 
   void _refresh() => ref.invalidate(invoicesPageProvider(_page));
 
@@ -30,7 +36,10 @@ class _InvoicesListScreenState extends ConsumerState<InvoicesListScreen> {
         children: [
           Row(
             children: [
-              Text('Invoices', style: Theme.of(context).textTheme.titleLarge),
+              GradientText(
+                'Invoices',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const Spacer(),
             ],
           ),
@@ -40,55 +49,98 @@ class _InvoicesListScreenState extends ConsumerState<InvoicesListScreen> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, st) => Center(child: Text('Error: $e')),
               data: (rows) {
-                if (rows.isEmpty) return const Center(child: Text('No invoices'));
+                if (rows.isEmpty)
+                  return const Center(child: Text('No invoices'));
                 return Column(
                   children: [
                     Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 1000),
-                          child: SingleChildScrollView(
-                            child: DataTable(
-                              columns: const [
-                                DataColumn(label: Text('Invoice No')),
-                                DataColumn(label: Text('Patient')),
-                                DataColumn(label: Text('Total')),
-                                DataColumn(label: Text('Status')),
-                                DataColumn(label: Text('Issued At')),
-                                DataColumn(label: Text('Actions')),
-                              ],
-                              rows: rows.map((r) {
-                                final id = r['id'] as String;
-                                final invNo = (r['invoice_no'] as String?) ?? '';
-                                final patient = (r['patient_name'] as String?) ?? '';
-                                final total = (r['total_cents'] as int?) ?? 0;
-                                final status = (r['status'] as String?) ?? '';
-                                final issuedAt = (r['issued_at'] as int?) ?? 0;
-                                return DataRow(cells: [
-                                  DataCell(Text(invNo)),
-                                  DataCell(Text(patient)),
-                                  DataCell(Text(_formatMoney(total))),
-                                  DataCell(Text(status)),
-                                  DataCell(Text(_formatDate(issuedAt))),
-                                  DataCell(Row(
-                                    children: [
-                                      IconButton(
-                                        tooltip: 'Open',
-                                        icon: const Icon(Icons.receipt_long),
-                                        onPressed: () async {
-                                          await Navigator.of(context).push(
-                                            MaterialPageRoute(
-                                              builder: (_) => InvoiceDetailScreen(invoiceId: id),
+                      child: GlassSurface(
+                        padding: const EdgeInsets.all(12),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 1000),
+                            child: SingleChildScrollView(
+                              child: DataTable(
+                                columns: const [
+                                  DataColumn(label: Text('Invoice No')),
+                                  DataColumn(label: Text('Patient')),
+                                  DataColumn(
+                                    label: Text('Total'),
+                                    numeric: true,
+                                  ),
+                                  DataColumn(label: Text('Status')),
+                                  DataColumn(label: Text('Issued At')),
+                                  DataColumn(label: Text('Actions')),
+                                ],
+                                rows: rows.asMap().entries.map((e) {
+                                  final i = e.key;
+                                  final r = e.value;
+                                  final id = r['id'] as String;
+                                  final invNo =
+                                      (r['invoice_no'] as String?) ?? '';
+                                  final patient =
+                                      (r['patient_name'] as String?) ?? '';
+                                  final total = (r['total_cents'] as int?) ?? 0;
+                                  final status = (r['status'] as String?) ?? '';
+                                  final issuedAt =
+                                      (r['issued_at'] as int?) ?? 0;
+                                  return DataRow(
+                                    color: MaterialStateProperty.resolveWith((
+                                      states,
+                                    ) {
+                                      if (states.contains(
+                                        MaterialState.hovered,
+                                      )) {
+                                        return Theme.of(context)
+                                            .colorScheme
+                                            .secondary
+                                            .withOpacity(0.10);
+                                      }
+                                      return i.isEven
+                                          ? const Color(0x0AFFFFFF)
+                                          : const Color(0x06FFFFFF);
+                                    }),
+                                    cells: [
+                                      DataCell(Text(invNo)),
+                                      DataCell(Text(patient)),
+                                      DataCell(
+                                        Align(
+                                          alignment: Alignment.centerRight,
+                                          child: Text(_formatMoney(total)),
+                                        ),
+                                      ),
+                                      DataCell(StatusPill(status)),
+                                      DataCell(Text(_formatDate(issuedAt))),
+                                      DataCell(
+                                        Row(
+                                          children: [
+                                            IconButton(
+                                              tooltip: 'Open',
+                                              icon: const Icon(
+                                                Icons.receipt_long,
+                                              ),
+                                              onPressed: () async {
+                                                await Navigator.of(
+                                                  context,
+                                                ).push(
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        InvoiceDetailScreen(
+                                                          invoiceId: id,
+                                                        ),
+                                                  ),
+                                                );
+                                                _refresh();
+                                              },
                                             ),
-                                          );
-                                          _refresh();
-                                        },
-                                      )
+                                          ],
+                                        ),
+                                      ),
                                     ],
-                                  )),
-                                ]);
-                              }).toList(),
+                                  );
+                                }).toList(),
+                              ),
                             ),
                           ),
                         ),

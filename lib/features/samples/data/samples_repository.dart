@@ -1,6 +1,5 @@
 import 'package:riverpod/riverpod.dart';
 import '../../../core/database/base_repository.dart';
-import '../../../core/auth/auth_controller.dart';
 
 class SamplesRepository extends BaseRepository {
   SamplesRepository(Ref ref) : super(ref);
@@ -132,19 +131,18 @@ class SamplesRepository extends BaseRepository {
   Future<void> updateSampleStatus(String sampleId, String status) async {
     final d = await db;
     final ts = nowSec();
-    final uid = ref.read(currentUserIdProvider);
     d.execute('BEGIN');
     try {
       final upd = d.prepare('''
         UPDATE samples
         SET status = ?,
             collected_at = CASE WHEN ? = 'collected' THEN ? ELSE collected_at END,
-            collected_by = CASE WHEN ? = 'collected' THEN ? ELSE collected_by END,
+            collected_by = CASE WHEN ? = 'collected' THEN NULL ELSE collected_by END,
             updated_at = ?
         WHERE id = ? AND deleted_at IS NULL
       ''');
       try {
-        upd.execute([status, status, ts, status, uid, ts, sampleId]);
+        upd.execute([status, status, ts, status, ts, sampleId]);
       } finally {
         upd.dispose();
       }
@@ -174,12 +172,12 @@ class SamplesRepository extends BaseRepository {
   }
 
   void _recomputeOrderStatus(dynamic d, String orderId, int ts) {
+    // Sample status counts
     final statusCounts = d
         .select(
           '''
       SELECT
         SUM(CASE WHEN s.status = 'processed' THEN 1 ELSE 0 END) AS processed,
-        SUM(CASE WHEN s.status IN ('received','processed') THEN 1 ELSE 0 END) AS inproc,
         SUM(CASE WHEN s.status IN ('collected','received','processed') THEN 1 ELSE 0 END) AS collected,
         COUNT(1) AS total
       FROM test_order_items i
@@ -190,13 +188,27 @@ class SamplesRepository extends BaseRepository {
         )
         .first;
     final processed = (statusCounts['processed'] as int?) ?? 0;
-    final inproc = (statusCounts['inproc'] as int?) ?? 0;
     final collected = (statusCounts['collected'] as int?) ?? 0;
     final total = (statusCounts['total'] as int?) ?? 0;
+
+    // Validated results count
+    final resultsRows = d.select(
+      '''
+      SELECT COUNT(1) AS results_total
+      FROM test_order_items i
+      JOIN test_results r ON r.test_order_item_id = i.id AND r.deleted_at IS NULL
+      WHERE i.order_id = ? AND r.validated_at IS NOT NULL
+    ''',
+      [orderId],
+    );
+    final resultsTotal = resultsRows.isEmpty
+        ? 0
+        : ((resultsRows.first['results_total'] as int?) ?? 0);
+
     String newStatus = 'ordered';
-    if (total > 0 && processed == total) {
+    if (total > 0 && processed == total && resultsTotal == total) {
       newStatus = 'completed';
-    } else if (inproc > 0) {
+    } else if (processed > 0) {
       newStatus = 'in_process';
     } else if (total > 0 && collected == total) {
       newStatus = 'sample_collected';
@@ -225,7 +237,9 @@ class SamplesRepository extends BaseRepository {
       final sql =
           '''
         UPDATE samples
-        SET status = ?, collected_at = CASE WHEN ? = 'collected' THEN ? ELSE collected_at END,
+        SET status = ?,
+            collected_at = CASE WHEN ? = 'collected' THEN ? ELSE collected_at END,
+            collected_by = CASE WHEN ? = 'collected' THEN NULL ELSE collected_by END,
             updated_at = ?
         WHERE deleted_at IS NULL
           AND test_order_item_id IN (
@@ -237,6 +251,7 @@ class SamplesRepository extends BaseRepository {
         toStatus,
         toStatus,
         ts,
+        toStatus,
         ts,
         orderId,
         ...fromStatuses,
