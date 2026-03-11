@@ -45,9 +45,13 @@ class _InvoiceDetailScreenState extends ConsumerState<InvoiceDetailScreen> {
     final lab = await labRepo.getProfile();
     final logo = await labRepo.loadLogoBytes();
     final data = InvoicePdfData(
-      labName: (lab?['lab_name'] as String?) ?? 'Laboratory',
-      address: (lab?['address'] as String?) ?? '',
-      phone: (lab?['phone'] as String?) ?? '',
+      labName: (lab?['lab_name'] as String?) ?? 'AL-MUNEER Clinical Laboratory',
+      address:
+          (lab?['address'] as String?) ??
+          "Main Road People's Colony Mumtazabad Multan",
+      phone:
+          (lab?['phone'] as String?) ??
+          '03007319167 , 03012222861,  0301609884',
       email: (lab?['email'] as String?) ?? '',
       logoBytes: logo,
       invoiceNo: (inv['invoice_no'] as String?) ?? '',

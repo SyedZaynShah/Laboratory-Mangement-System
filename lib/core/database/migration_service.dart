@@ -943,7 +943,15 @@ class DatabaseMigrationService {
         final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
         db.execute(
           'INSERT INTO lab_profile (id, lab_name, address, phone, email, logo_path, created_at) VALUES (?,?,?,?,?,?,?)',
-          ['lab', 'Your Lab Name', '', '', '', null, ts],
+          [
+            'lab',
+            'AL-MUNEER Clinical Laboratory',
+            "Main Road People's Colony Mumtazabad Multan",
+            '03007319167 , 03012222861,  0301609884',
+            '',
+            null,
+            ts,
+          ],
         );
       }
       db.execute('COMMIT;');

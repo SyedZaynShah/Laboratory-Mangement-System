@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart' as sq3;
 import 'migration_service.dart';
+import 'seed_data.dart';
 
 class AppDatabase {
   sq3.Database? _db;
@@ -41,6 +42,7 @@ class AppDatabase {
       _db = sq3.sqlite3.open(dbFile.path);
       _dbPath = dbFile.path;
       DatabaseMigrationService(_db!).migrate();
+      await seedDefaultTests(_db!);
       if (kDebugMode) {
         debugPrint('[DB] Opened at ${dbFile.path}');
       }
